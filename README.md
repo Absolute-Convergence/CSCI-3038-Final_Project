@@ -163,6 +163,29 @@ and candidate mappings are defensively copied into read-only views.
 - The complete Pareto Front, with no automatically selected universal winner
 - GUI code optional and independent from optimizer logic
 
+## Trunk-Based Development Workflow
+
+The team is moving toward trunk-based development. `main` is the shared
+integration branch, and implementation work occurs on short-lived,
+timestamped working branches.
+
+- Start each work session from an up-to-date `main`.
+- Name working branches `work/YYYY-MM-DD-HHmm-short-topic`, using the local
+  date and time when the branch is created. For example:
+  `work/2026-07-28-1430-config-loader`.
+- Keep each branch focused and merge it back into `main` the same day when
+  practical. Begin the next day's work from the updated `main`.
+- Commit frequently at meaningful, buildable checkpoints. Use clear commit
+  messages that identify what changed or what remains incomplete.
+- Do not force-push or rewrite shared working-branch history. Merge without
+  squashing so checkpoint commits remain recoverable if a later change breaks.
+- Before merging, run the relevant tests and the global monolith checker, then
+  update the scratch memory in `AGENTS.md`.
+- Keep `main` stable. Do not begin feature work directly on `main`, and do not
+  allow working branches to become long-lived alternate integration branches.
+- Retain merged timestamped branches as named checkpoints until the team
+  agrees on a cleanup policy.
+
 ## Development Verification
 
 Run the current test suite with the required interpreter:
