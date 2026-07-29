@@ -88,15 +88,16 @@ capability.
 Keep this section brief and current. Update it after every repository change so
 the next person can resume without reconstructing recent decisions.
 
-- Last updated: 2026-07-28
-- Current state: The immutable configuration and candidate foundation is in
-  `black_box_optimizer.models`, with public exports, an architecture baseline,
-  focused tests, an Iris JSON example, and a README describing the planned
-  structure and architecture. Aligned Draft v0.2 planning documents are in
-  `docs/planning_baseline_v02`; the original Draft v0.1 set remains preserved
-  in `docs/planning_baseline_v01`. The README now defines the team's
-  timestamped, short-lived trunk-based working-branch workflow. No optimizer
-  behavior exists yet.
+- Last updated: 2026-07-29
+- Current state: Immutable configuration and candidate models are in
+  `black_box_optimizer.models`. `black_box_optimizer.config_loader` now loads
+  the approved JSON shape into an immutable `ProjectConfiguration`, preserves
+  parameter and objective order, rejects malformed or contract-drifting input,
+  and resolves relative worker paths from the configuration directory. The
+  Iris JSON is a loader-tested example. Search, execution, trial records,
+  history, and Pareto behavior do not exist on `main` yet. Aligned Draft v0.2
+  planning documents remain in `docs/planning_baseline_v02`; Draft v0.1 is
+  preserved in `docs/planning_baseline_v01`.
 - Decisions: Source files over 1,000 physical lines fail verification unless an
   exact, documented human-approved exception exists. Near-80-character lines
   are advisory. Parameter JSON uses `kind`; `AlgorithmSpec` stores `name` and
@@ -105,11 +106,15 @@ the next person can resume without reconstructing recent decisions.
   work uses `work/YYYY-MM-DD-HHmm-short-topic` branches, frequent checkpoint
   commits, and non-squash merges to `main`. The v0.2 planning set is current
   guidance but remains pending team ratification and technical approval; each
-  alignment change includes its reason.
-- Verification: All 17 tests pass under Python 3.13.14. The repository hygiene
-  checker passes without line-length advisories. The Iris JSON previously
-  parsed successfully, and all 60 pages of the four v0.2 planning documents
-  were previously rendered and visually reviewed.
-- Next work: Await approval for configuration loading or the one-trial vertical
-  slice. The configuration-directory path-resolution rule is now ratified. Do
-  not implement search or execution as part of the foundation.
+  alignment change includes its reason. The loader treats the documented JSON
+  fields as exact, rejects duplicate object keys and unsupported algorithms,
+  and accepts only `random_search` for the MVP.
+- Verification: All 26 tests pass under Python 3.13.14. The repository hygiene
+  checker passes without line-length advisories. The Iris JSON loads through
+  the public loader, and all 60 pages of the four v0.2 planning documents were
+  previously rendered and visually reviewed.
+- Next work: Build the one-trial candidate-to-record vertical slice without
+  adding search or the full controller loop. An unmerged remote branch,
+  `origin/work/2026-07-29-1327-metrics-parser`, contains the one-row CSV parser
+  intended for the future record factory. Follow change control only if
+  implementation requires a documented contract or architecture change.
