@@ -104,11 +104,13 @@ the next person can resume without reconstructing recent decisions.
   `seed`; candidate mappings are defensively copied into read-only views.
   Relative worker paths resolve from the configuration file's directory. Daily
   work uses `work/YYYY-MM-DD-HHmm-short-topic` branches, frequent checkpoint
-  commits, and non-squash merges to `main`. The v0.2 planning set is current
-  guidance but remains pending team ratification and technical approval; each
-  alignment change includes its reason. The loader treats the documented JSON
-  fields as exact, rejects duplicate object keys and unsupported algorithms,
-  and accepts only `random_search` for the MVP.
+  commits, and non-squash merges to `main`. After verification, an annotated
+  `checkpoint/main-<topic>-YYYY-MM-DD-HHmm` tag preserves the merge checkpoint,
+  and the completed local and remote work branches are deleted. The v0.2
+  planning set is current guidance but remains pending team ratification and
+  technical approval; each alignment change includes its reason. The loader
+  treats the documented JSON fields as exact, rejects duplicate object keys
+  and unsupported algorithms, and accepts only `random_search` for the MVP.
 - Verification: All 26 tests pass under Python 3.13.14. The repository hygiene
   checker passes without line-length advisories. The Iris JSON loads through
   the public loader, and all 60 pages of the four v0.2 planning documents were
