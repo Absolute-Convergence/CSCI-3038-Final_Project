@@ -88,15 +88,18 @@ capability.
 Keep this section brief and current. Update it after every repository change so
 the next person can resume without reconstructing recent decisions.
 
-- Last updated: 2026-07-28
+- Last updated: 2026-07-29
 - Current state: The immutable configuration and candidate foundation is in
   `black_box_optimizer.models`, with public exports, an architecture baseline,
   focused tests, an Iris JSON example, and a README describing the planned
   structure and architecture. Aligned Draft v0.2 planning documents are in
   `docs/planning_baseline_v02`; the original Draft v0.1 set remains preserved
   in `docs/planning_baseline_v01`. The README now defines the team's
-  timestamped, short-lived trunk-based working-branch workflow. No optimizer
-  behavior exists yet.
+  timestamped, short-lived trunk-based working-branch workflow.
+  `black_box_optimizer.metrics` now provides `read_trial_metrics()`, a
+  one-row CSV metrics parser satisfying the Metrics Validity contract in the
+  Technical Design Specification (§6.2, §2.3). No other optimizer behavior
+  exists yet.
 - Decisions: Source files over 1,000 physical lines fail verification unless an
   exact, documented human-approved exception exists. Near-80-character lines
   are advisory. Parameter JSON uses `kind`; `AlgorithmSpec` stores `name` and
@@ -105,11 +108,18 @@ the next person can resume without reconstructing recent decisions.
   work uses `work/YYYY-MM-DD-HHmm-short-topic` branches, frequent checkpoint
   commits, and non-squash merges to `main`. The v0.2 planning set is current
   guidance but remains pending team ratification and technical approval; each
-  alignment change includes its reason.
-- Verification: All 17 tests pass under Python 3.13.14. The repository hygiene
+  alignment change includes its reason. `metrics.py` raises
+  `MetricsFormatError` for structural CSV problems and `NonFiniteMetricError`
+  for NaN/infinite values (both subclass `ValueError`) so a future
+  `records.py` can map failures onto the `MetricsStatus` values
+  (`missing`/`malformed`/`nonfinite`) from TDS §6.3 without string-matching
+  exception messages.
+- Verification: All 34 tests pass under local Python (3.13.14 not available in
+  this environment; verified under 3.14 instead). The repository hygiene
   checker passes without line-length advisories. The Iris JSON previously
   parsed successfully, and all 60 pages of the four v0.2 planning documents
   were previously rendered and visually reviewed.
 - Next work: Await approval for configuration loading or the one-trial vertical
   slice. The configuration-directory path-resolution rule is now ratified. Do
-  not implement search or execution as part of the foundation.
+  not implement search or execution as part of the foundation. `metrics.py` is
+  available now for whoever builds `records.py` next.
