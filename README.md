@@ -191,8 +191,11 @@ timestamped working branches.
   update the scratch memory in `AGENTS.md`.
 - Keep `main` stable. Do not begin feature work directly on `main`, and do not
   allow working branches to become long-lived alternate integration branches.
-- Retain merged timestamped branches as named checkpoints until the team
-  agrees on a cleanup policy.
+- After a verified merge, create and push an annotated checkpoint tag named
+  `checkpoint/main-<topic>-YYYY-MM-DD-HHmm` on the merge commit.
+- Delete the completed working branch locally and remotely. The non-squash
+  merge and checkpoint tag preserve its history; merged branches do not remain
+  active.
 
 ## Development Verification
 
