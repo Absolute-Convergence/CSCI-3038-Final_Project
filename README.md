@@ -8,9 +8,9 @@ code. It will send candidate parameters through command-line flags, receive one
 row of numerical metrics through a trial-specific CSV file, and return the
 complete non-dominated Pareto Front across multiple objectives.
 
-The repository is currently at the foundation stage. Immutable configuration
-and candidate models exist, but search, worker execution, trial history, Pareto
-evaluation, reporting, and the optional GUI have not been implemented.
+The repository now has immutable configuration and candidate models plus a
+validated JSON configuration loader. Search, worker execution, trial history,
+Pareto evaluation, reporting, and the optional GUI have not been implemented.
 
 See [docs/architecture-baseline.md](docs/architecture-baseline.md) for the
 controlling foundation contracts and MVP boundaries.
@@ -77,7 +77,7 @@ CSCI-3038-Final_Project/
 |   |-- __main__.py                   # planned module entry point
 |   |-- cli.py                        # planned CLI composition
 |   |-- models.py                     # implemented immutable foundation types
-|   |-- config_loader.py              # planned JSON parsing and validation
+|   |-- config_loader.py              # implemented JSON parsing and validation
 |   |-- controller.py                 # planned sequential lifecycle governor
 |   |-- runner.py                     # planned synchronous subprocess boundary
 |   |-- metrics.py                    # implemented one-row CSV parser
@@ -133,7 +133,13 @@ The intended dependency direction is inward toward immutable contracts. The
 Runner will not import search or Pareto code; RandomSearch will not import the
 Runner; and the optimizer package will never import the example worker.
 
-## Foundation Types Available Now
+## Configuration and Foundation Types Available Now
+
+`load_configuration(path)` reads one UTF-8 JSON project file, validates its
+complete structure before any trial can run, resolves relative worker script
+or executable paths from the configuration file's directory, and returns an
+immutable `ProjectConfiguration`. Invalid input raises `ConfigurationError`
+with one or more location-aware issues.
 
 The `black_box_optimizer` package currently exports:
 
@@ -147,6 +153,8 @@ The `black_box_optimizer` package currently exports:
 - `StopPolicy`
 - `ProjectConfiguration`
 - `CandidateConfiguration`
+- `ConfigurationError`
+- `load_configuration`
 
 These are frozen dataclasses or string enums. Ordered collections use tuples,
 and candidate mappings are defensively copied into read-only views.
@@ -184,8 +192,11 @@ timestamped working branches.
   update the scratch memory in `AGENTS.md`.
 - Keep `main` stable. Do not begin feature work directly on `main`, and do not
   allow working branches to become long-lived alternate integration branches.
-- Retain merged timestamped branches as named checkpoints until the team
-  agrees on a cleanup policy.
+- After a verified merge, create and push an annotated checkpoint tag named
+  `checkpoint/main-<topic>-YYYY-MM-DD-HHmm` on the merge commit.
+- Delete the completed working branch locally and remotely. The non-squash
+  merge and checkpoint tag preserve its history; merged branches do not remain
+  active.
 
 ## Development Verification
 
@@ -202,6 +213,5 @@ py -3.13 tools\check_monoliths.py
 ```
 
 The application does not yet have a runnable optimizer entry point. The next
-approved implementation step will add either configuration loading or the
-one-trial vertical slice; this README should be updated as planned modules
-become real.
+core implementation boundary is the one-trial candidate-to-record vertical
+slice. This README should be updated as planned modules become real.
