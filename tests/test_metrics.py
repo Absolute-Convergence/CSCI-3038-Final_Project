@@ -6,7 +6,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from black_box_optimizer.metrics import read_trial_metrics
+from black_box_optimizer.metrics import (
+    MetricsFormatError,
+    NonFiniteMetricError,
+    read_trial_metrics,
+)
 
 
 class MetricsParserTests(unittest.TestCase):
@@ -117,6 +121,26 @@ class MetricsParserTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "finite"):
             read_trial_metrics(path)
+
+    # These confirm malformed and nonfinite failures raise distinct
+    # exception types, so a caller can tell them apart (MetricsStatus
+    # in the design spec has separate "malformed" and "nonfinite" values).
+
+    def test_malformed_csv_raises_metrics_format_error(self) -> None:
+        path = self.write_csv("metrics.csv", "")
+
+        with self.assertRaises(MetricsFormatError):
+            read_trial_metrics(path)
+
+    def test_non_finite_value_raises_non_finite_metric_error(self) -> None:
+        path = self.write_csv("metrics.csv", "accuracy\ninf\n")
+
+        with self.assertRaises(NonFiniteMetricError):
+            read_trial_metrics(path)
+
+        # NonFiniteMetricError must not also be a MetricsFormatError,
+        # so the two failure modes stay distinguishable.
+        self.assertFalse(issubclass(NonFiniteMetricError, MetricsFormatError))
 
     # Some programs save CSV files with a UTF-8 byte-order mark (BOM).
     # The parser should ignore it instead of treating it as part of the

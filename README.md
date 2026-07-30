@@ -80,7 +80,7 @@ CSCI-3038-Final_Project/
 |   |-- config_loader.py              # planned JSON parsing and validation
 |   |-- controller.py                 # planned sequential lifecycle governor
 |   |-- runner.py                     # planned synchronous subprocess boundary
-|   |-- metrics.py                    # planned one-row CSV parser
+|   |-- metrics.py                    # implemented one-row CSV parser
 |   |-- records.py                    # planned TrialRecord construction
 |   |-- history.py                    # planned append-only TrialHistory
 |   |-- persistence.py                # planned durable history snapshots
@@ -98,6 +98,7 @@ CSCI-3038-Final_Project/
 |       `-- worker.py                 # planned external PyTorch worker
 |-- tests/
 |   |-- test_models.py                # implemented foundation-model tests
+|   |-- test_metrics.py               # implemented metrics-parser tests
 |   |-- test_check_monoliths.py       # implemented hygiene-checker tests
 |   |-- unit/                         # planned focused unit tests
 |   |-- integration/                  # planned component-boundary tests
