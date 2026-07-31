@@ -98,10 +98,13 @@ the next person can resume without reconstructing recent decisions.
   provides `read_trial_metrics()`, a one-row CSV metrics parser satisfying
   the Metrics Validity contract in the Technical Design Specification (§6.2,
   §2.3). `black_box_optimizer.records` now provides `TrialRecord` and
-  `build_trial_record()` per TDS §6.3. Search, controller, history, and
-  Pareto behavior do not exist yet. Aligned Draft v0.2 planning documents
-  remain in `docs/planning_baseline_v02`; Draft v0.1 is preserved in
-  `docs/planning_baseline_v01`.
+  `build_trial_record()` per TDS §6.3. `black_box_optimizer.stop_policy` now
+  provides `StopDecision` and `StopPolicyEvaluator` (`before_trial()`,
+  `after_trial()`) per TDS §5.3 -- the only TerminationReason it evaluates is
+  `maximum_trials`; the other three are the controller's responsibility.
+  Search, controller, history, and Pareto behavior do not exist yet. Aligned
+  Draft v0.2 planning documents remain in `docs/planning_baseline_v02`;
+  Draft v0.1 is preserved in `docs/planning_baseline_v01`.
 - Decisions: Source files over 1,000 physical lines fail verification unless an
   exact, documented human-approved exception exists. Near-80-character lines
   are advisory. Parameter JSON uses `kind`; `AlgorithmSpec` stores `name` and
@@ -127,8 +130,11 @@ the next person can resume without reconstructing recent decisions.
   with only `runtime_seconds`, `exit_code`, `timed_out`, `execution_status`,
   and `error_message` -- it does not bundle `trial_id` or `metrics_path`.
   Do not revert `records.py` to match the abbreviated §11.1 table without
-  first confirming `runner.py`'s actual return shape.
-- Verification: All 56 tests pass under local Python (3.13.14 not available
+  first confirming `runner.py`'s actual return shape. `StopDecision` requires
+  `continue_execution` and `termination_reason` to agree with each other
+  (a reason is required when stopping, forbidden when continuing) since an
+  inconsistent decision would be a silent bug in the controller loop.
+- Verification: All 75 tests pass under local Python (3.13.14 not available
   in this environment; verified under 3.14 instead). The repository hygiene
   checker passes without line-length advisories. The Iris JSON loads through
   the public loader, and all 60 pages of the four v0.2 planning documents
@@ -136,7 +142,8 @@ the next person can resume without reconstructing recent decisions.
 - Next work: Build the controller state machine (TDS §5) and the runner
   subprocess boundary (in progress on `work/2026-07-29-1918-runner`) so a
   one-trial candidate-to-record slice can actually run end to end.
-  `records.py` is now available for the controller to call once its real
-  input shape (candidate, trial_id, metrics_path, execution_result) is
-  confirmed against runner.py's final interface. Follow change control only
-  if implementation requires a documented contract or architecture change.
+  `records.py` and `stop_policy.py` are now both available for the
+  controller to call once `records.py`'s real input shape (candidate,
+  trial_id, metrics_path, execution_result) is confirmed against
+  runner.py's final interface. Follow change control only if implementation
+  requires a documented contract or architecture change.
