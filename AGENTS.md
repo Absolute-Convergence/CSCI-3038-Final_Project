@@ -94,10 +94,22 @@ the next person can resume without reconstructing recent decisions.
   the approved JSON shape into an immutable `ProjectConfiguration`, preserves
   parameter and objective order, rejects malformed or contract-drifting input,
   and resolves relative worker paths from the configuration directory. The
-  Iris JSON is a loader-tested example. Search, execution, trial records,
-  history, and Pareto behavior do not exist on `main` yet. Aligned Draft v0.2
-  planning documents remain in `docs/planning_baseline_v02`; Draft v0.1 is
-  preserved in `docs/planning_baseline_v01`.
+  Iris JSON is a loader-tested example. `black_box_optimizer.metrics` now
+  provides `read_trial_metrics()`, a one-row CSV metrics parser satisfying
+  the Metrics Validity contract in the Technical Design Specification (§6.2,
+  §2.3). `black_box_optimizer.records` now provides `TrialRecord` and
+  `build_trial_record()` per TDS §6.3. `black_box_optimizer.stop_policy` now
+  provides `StopDecision` and `StopPolicyEvaluator` (`before_trial()`,
+  `after_trial()`) per TDS §5.3 -- the only TerminationReason it evaluates is
+  `maximum_trials`; the other three are the controller's responsibility.
+  `black_box_optimizer.history` now provides `TrialHistory`
+  (`append()`/`snapshot()`), an in-memory, mutable-internally,
+  read-only-externally ordered collection rejecting duplicate or
+  out-of-order trial IDs; it does not perform any file I/O (that remains
+  `persistence.py`'s job). Search, controller, and Pareto behavior do not
+  exist yet. Aligned Draft v0.2 planning documents remain in
+  `docs/planning_baseline_v02`; Draft v0.1 is preserved in
+  `docs/planning_baseline_v01`.
 - Decisions: Source files over 1,000 physical lines fail verification unless an
   exact, documented human-approved exception exists. Near-80-character lines
   are advisory. Parameter JSON uses `kind`; `AlgorithmSpec` stores `name` and
@@ -111,6 +123,22 @@ the next person can resume without reconstructing recent decisions.
   technical approval; each alignment change includes its reason. The loader
   treats the documented JSON fields as exact, rejects duplicate object keys
   and unsupported algorithms, and accepts only `random_search` for the MVP.
+  `metrics.py` raises `MetricsFormatError` for structural CSV problems and
+  `NonFiniteMetricError` for NaN/infinite values (both subclass `ValueError`)
+  so `records.py` can map failures onto the `MetricsStatus` values
+  (`missing`/`malformed`/`nonfinite`) from TDS §6.3 without string-matching
+  exception messages. KNOWN CONTRACT DEVIATION: TDS §11.1 lists
+  `build_trial_record(candidate, metrics_path, observed_fields)`, but the
+  implemented signature is `build_trial_record(candidate, trial_id,
+  metrics_path, execution_result)`. This follows the real `runner.py`
+  (branch `work/2026-07-29-1918-runner`), whose `execute()` returns a dict
+  with only `runtime_seconds`, `exit_code`, `timed_out`, `execution_status`,
+  and `error_message` -- it does not bundle `trial_id` or `metrics_path`.
+  Do not revert `records.py` to match the abbreviated §11.1 table without
+  first confirming `runner.py`'s actual return shape. `StopDecision` requires
+  `continue_execution` and `termination_reason` to agree with each other
+  (a reason is required when stopping, forbidden when continuing) since an
+  inconsistent decision would be a silent bug in the controller loop.
 - Verification: All 26 tests pass under Python 3.13 in 0.035 seconds.
   The repository hygiene checker passes without line-length advisories. 
   The Iris JSON loads through the public loader, and all 60 pages of the 
