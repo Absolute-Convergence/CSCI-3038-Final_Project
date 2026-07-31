@@ -81,7 +81,7 @@ CSCI-3038-Final_Project/
 |   |-- controller.py                 # planned sequential lifecycle governor
 |   |-- runner.py                     # planned synchronous subprocess boundary
 |   |-- metrics.py                    # implemented one-row CSV parser
-|   |-- records.py                    # planned TrialRecord construction
+|   |-- records.py                    # implemented TrialRecord construction
 |   |-- history.py                    # planned append-only TrialHistory
 |   |-- persistence.py                # planned durable history snapshots
 |   |-- stop_policy.py                # planned maximum-trial decisions
@@ -99,6 +99,7 @@ CSCI-3038-Final_Project/
 |-- tests/
 |   |-- test_models.py                # implemented foundation-model tests
 |   |-- test_metrics.py               # implemented metrics-parser tests
+|   |-- test_records.py               # implemented trial-record tests
 |   |-- test_check_monoliths.py       # implemented hygiene-checker tests
 |   |-- unit/                         # planned focused unit tests
 |   |-- integration/                  # planned component-boundary tests

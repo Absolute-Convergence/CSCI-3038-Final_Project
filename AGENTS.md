@@ -88,7 +88,7 @@ capability.
 Keep this section brief and current. Update it after every repository change so
 the next person can resume without reconstructing recent decisions.
 
-- Last updated: 2026-07-29
+- Last updated: 2026-07-31
 - Current state: Immutable configuration and candidate models are in
   `black_box_optimizer.models`. `black_box_optimizer.config_loader` now loads
   the approved JSON shape into an immutable `ProjectConfiguration`, preserves
@@ -97,9 +97,10 @@ the next person can resume without reconstructing recent decisions.
   Iris JSON is a loader-tested example. `black_box_optimizer.metrics` now
   provides `read_trial_metrics()`, a one-row CSV metrics parser satisfying
   the Metrics Validity contract in the Technical Design Specification (§6.2,
-  §2.3). Search, execution, trial records, history, and Pareto behavior do
-  not exist yet. Aligned Draft v0.2 planning documents remain in
-  `docs/planning_baseline_v02`; Draft v0.1 is preserved in
+  §2.3). `black_box_optimizer.records` now provides `TrialRecord` and
+  `build_trial_record()` per TDS §6.3. Search, controller, history, and
+  Pareto behavior do not exist yet. Aligned Draft v0.2 planning documents
+  remain in `docs/planning_baseline_v02`; Draft v0.1 is preserved in
   `docs/planning_baseline_v01`.
 - Decisions: Source files over 1,000 physical lines fail verification unless an
   exact, documented human-approved exception exists. Near-80-character lines
@@ -116,15 +117,26 @@ the next person can resume without reconstructing recent decisions.
   and unsupported algorithms, and accepts only `random_search` for the MVP.
   `metrics.py` raises `MetricsFormatError` for structural CSV problems and
   `NonFiniteMetricError` for NaN/infinite values (both subclass `ValueError`)
-  so a future `records.py` can map failures onto the `MetricsStatus` values
+  so `records.py` can map failures onto the `MetricsStatus` values
   (`missing`/`malformed`/`nonfinite`) from TDS §6.3 without string-matching
-  exception messages.
-- Verification: All 43 tests pass under local Python (3.13.14 not available
+  exception messages. KNOWN CONTRACT DEVIATION: TDS §11.1 lists
+  `build_trial_record(candidate, metrics_path, observed_fields)`, but the
+  implemented signature is `build_trial_record(candidate, trial_id,
+  metrics_path, execution_result)`. This follows the real `runner.py`
+  (branch `work/2026-07-29-1918-runner`), whose `execute()` returns a dict
+  with only `runtime_seconds`, `exit_code`, `timed_out`, `execution_status`,
+  and `error_message` -- it does not bundle `trial_id` or `metrics_path`.
+  Do not revert `records.py` to match the abbreviated §11.1 table without
+  first confirming `runner.py`'s actual return shape.
+- Verification: All 56 tests pass under local Python (3.13.14 not available
   in this environment; verified under 3.14 instead). The repository hygiene
   checker passes without line-length advisories. The Iris JSON loads through
   the public loader, and all 60 pages of the four v0.2 planning documents
   were previously rendered and visually reviewed.
-- Next work: Build the one-trial candidate-to-record vertical slice without
-  adding search or the full controller loop. `metrics.py` is now merged and
-  available for the future record factory. Follow change control only if
-  implementation requires a documented contract or architecture change.
+- Next work: Build the controller state machine (TDS §5) and the runner
+  subprocess boundary (in progress on `work/2026-07-29-1918-runner`) so a
+  one-trial candidate-to-record slice can actually run end to end.
+  `records.py` is now available for the controller to call once its real
+  input shape (candidate, trial_id, metrics_path, execution_result) is
+  confirmed against runner.py's final interface. Follow change control only
+  if implementation requires a documented contract or architecture change.
