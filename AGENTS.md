@@ -139,18 +139,11 @@ the next person can resume without reconstructing recent decisions.
   `continue_execution` and `termination_reason` to agree with each other
   (a reason is required when stopping, forbidden when continuing) since an
   inconsistent decision would be a silent bug in the controller loop.
-- Verification: All 82 tests pass under local Python (3.13.14 not available
-  in this environment; verified under 3.14 instead). The repository hygiene
-  checker passes without line-length advisories. The Iris JSON loads through
-  the public loader, and all 60 pages of the four v0.2 planning documents
-  were previously rendered and visually reviewed.
-- Next work: Build the controller state machine (TDS §5) and the runner
-  subprocess boundary (in progress on `work/2026-07-29-1918-runner`) so a
-  one-trial candidate-to-record slice can actually run end to end.
-  `records.py`, `stop_policy.py`, and `history.py` are now all available
-  for the controller to call once `records.py`'s real input shape
-  (candidate, trial_id, metrics_path, execution_result) is confirmed
-  against runner.py's final interface. Emily is starting on
-  `search/random_search.py` (TDS §7) next -- announced in team chat.
-  Follow change control only if implementation requires a documented
-  contract or architecture change.
+- Verification: All 26 tests pass under Python 3.13 in 0.035 seconds.
+  The repository hygiene checker passes without line-length advisories. 
+  The Iris JSON loads through the public loader, and all 60 pages of the 
+  four v0.2 planning documents were previously rendered and visually reviewed.
+- Next work: Most of the one-trial verticle slice is complete. The only things
+  that appear to be left is the controller. Eventually we will need to implement
+  the search features as that remains one of the largest independent systems yet
+  completed.
