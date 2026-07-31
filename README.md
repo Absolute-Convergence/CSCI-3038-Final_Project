@@ -79,7 +79,7 @@ CSCI-3038-Final_Project/
 |   |-- models.py                     # implemented immutable foundation types
 |   |-- config_loader.py              # implemented JSON parsing and validation
 |   |-- controller.py                 # planned sequential lifecycle governor
-|   |-- runner.py                     # planned synchronous subprocess boundary
+|   |-- runner.py                     # implemented synchronous subprocess boundary
 |   |-- metrics.py                    # planned one-row CSV parser
 |   |-- records.py                    # planned TrialRecord construction
 |   |-- history.py                    # planned append-only TrialHistory
