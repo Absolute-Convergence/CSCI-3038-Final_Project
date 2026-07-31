@@ -82,7 +82,7 @@ CSCI-3038-Final_Project/
 |   |-- runner.py                     # planned synchronous subprocess boundary
 |   |-- metrics.py                    # implemented one-row CSV parser
 |   |-- records.py                    # implemented TrialRecord construction
-|   |-- history.py                    # planned append-only TrialHistory
+|   |-- history.py                    # implemented append-only TrialHistory
 |   |-- persistence.py                # planned durable history snapshots
 |   |-- stop_policy.py                # implemented maximum-trial decisions
 |   |-- pareto.py                     # planned eligibility and dominance
@@ -101,6 +101,7 @@ CSCI-3038-Final_Project/
 |   |-- test_metrics.py               # implemented metrics-parser tests
 |   |-- test_records.py               # implemented trial-record tests
 |   |-- test_stop_policy.py           # implemented stop-policy tests
+|   |-- test_history.py               # implemented trial-history tests
 |   |-- test_check_monoliths.py       # implemented hygiene-checker tests
 |   |-- unit/                         # planned focused unit tests
 |   |-- integration/                  # planned component-boundary tests
