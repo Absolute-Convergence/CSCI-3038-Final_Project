@@ -88,7 +88,7 @@ capability.
 Keep this section brief and current. Update it after every repository change so
 the next person can resume without reconstructing recent decisions.
 
-- Last updated: 2026-07-29
+- Last updated: 2026-07-31
 - Current state: Immutable configuration and candidate models are in
   `black_box_optimizer.models`. `black_box_optimizer.config_loader` now loads
   the approved JSON shape into an immutable `ProjectConfiguration`, preserves
@@ -111,12 +111,11 @@ the next person can resume without reconstructing recent decisions.
   technical approval; each alignment change includes its reason. The loader
   treats the documented JSON fields as exact, rejects duplicate object keys
   and unsupported algorithms, and accepts only `random_search` for the MVP.
-- Verification: All 26 tests pass under Python 3.13.14. The repository hygiene
-  checker passes without line-length advisories. The Iris JSON loads through
-  the public loader, and all 60 pages of the four v0.2 planning documents were
-  previously rendered and visually reviewed.
-- Next work: Build the one-trial candidate-to-record vertical slice without
-  adding search or the full controller loop. An unmerged remote branch,
-  `origin/work/2026-07-29-1327-metrics-parser`, contains the one-row CSV parser
-  intended for the future record factory. Follow change control only if
-  implementation requires a documented contract or architecture change.
+- Verification: All 26 tests pass under Python 3.13 in 0.035 seconds.
+  The repository hygiene checker passes without line-length advisories. 
+  The Iris JSON loads through the public loader, and all 60 pages of the 
+  four v0.2 planning documents were previously rendered and visually reviewed.
+- Next work: Most of the one-trial verticle slice is complete. The only things
+  that appear to be left is the controller. Eventually we will need to implement
+  the search features as that remains one of the largest independent systems yet
+  completed.
