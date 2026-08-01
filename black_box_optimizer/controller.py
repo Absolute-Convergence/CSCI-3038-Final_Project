@@ -1,48 +1,48 @@
 """
 controller.py
 
-The Controller: the deterministic finite-state lifecycle
-governor. It owns state transitions and authorizes at most one
-worker execution at a time. It delegates candidate generation
-to the search algorithm, execution budgeting to StopPolicy,
-subprocess execution to runner.execute(), and record
-construction to build_trial_record(). By designm it does not
-rank metrics or know worker internals itself.
+The Controller! This is the deterministic finite-state lifecycle
+governor from section 5 of the TDS. Its whole job is deciding what
+state comes next and making sure only one worker is ever authorized at
+a time.
 
-It does not load JSON (config_loader.py's job) and does not write
-anything to disk itself; it accepts already-built configuration objects
-and a directory to write per-trial metrics files into.
+It doesn’t actually know anything about optimization itself. Candidate
+generation belongs to the search algorithm, execution budgeting belongs
+to StopPolicy, actually running the worker belongs to runner.execute(),
+and turning that run into a TrialRecord belongs to
+build_trial_record(). The controller just coordinates everybody else.
 
-KNOWN GAP!!! FINALIZING (section 5.1) is supposed to derive a
-ParetoFront, construct an OptimizationResult, and hand it to a
-Reporter. But since none of pareto.py, results.py, or reporting.py exist yet, so
-_finalize() is an intentional, explicit seam: it raises
-NotImplementedError. By the time _finalize() runs, state,
-termination_reason, and the complete real TrialHistory are already
-correct and inspectable -- only the final Pareto/report step is
-missing.
+It also doesn’t load JSON (that’s config_loader.py’s deal). It
+expects already built config objects and also an already created
+RunDirectory to handle any metrics files and history checkpoints.
 
-ANOTHER KNOWN GAP!!! RECORDING's persistence.checkpoint(history.snapshot()) call
-(section 5.4) is omitted, since persistence.py does not exist yet.
-This only affects on-disk durability/resume, not correctness -- history
-is still fully and correctly tracked in memory.
+KNOWN GAP!!! FINALIZING isn’t actually finished yet. According to the
+spec it’s supposed to derive a ParetoFront, build an
+OptimizationResult, then hand everything off to a Reporter. The catch
+is… results.py and reporting.py don’t exist yet, and pareto.py only
+implements is_eligible(), not the actual Pareto sweep. So _finalize()
+is an intentional seam for now it raises NotImplementedError.
 
-LAST KNOWN GAP!!! Midworker cancellation (section 5.3's "KeyboardInterrupt
-during worker" row -- terminate the child, then record a cancelled
-attempt) is not implemented. Only pre-launch cancellation (interrupting
-before a worker is authorized) is handled for real; an interrupt that
-lands while EXECUTING is in progress is re-raised rather than silently
-mishandled, since safely killing the child would mean changing
-runner.py's blocking subprocess.run() call, must consult the group for
-contract changes such as this!
+(The good news is that by the time _finalize() is done, the other
+important stuff is totally correct. The controller state,
+termination_reason, and the full TrialHistory have all been built.
+The only thing missing is that final Pareto/report step.)
 
-Unexpected (non-KeyboardInterrupt) exceptions from runner.execute(),
-build_trial_record(), or the search/stop-policy collaborators are also
-allowed to propagate straight to the caller rather than being caught
-and routed into FAILED/FINALIZING. This is deliberate, not an
-oversight -- swallowing programming errors into a state transition
-would hide real bugs the same way silently swallowing a mid-worker
-KeyboardInterrupt would.
+LAST KNOWN GAP!!! Mid-worker cancellation isn’t implemented yet. The
+spec says a KeyboardInterrupt during a worker should terminate the child
+process and still record a cancelled trial. Right now only pre-launch
+cancellation is handled for real. If Ctrl+C lands while the worker is
+running, the interrupt is raised again instead of pretending everything
+is fine. Safely killing the child would require changing runner.pys
+blocking subprocess.run() call, and that’s a contract change so best to
+discuss amongst I suppose.
+
+Final last note! Unexpected exceptions (anything besides
+KeyboardInterrupt) from runner.execute(), build_trial_record(), or the
+search/stop-policy collaborators are allowed to bubble up on purpose.
+Those are programming bugs, not normal controller states, because I
+fear that quietly routing them through FAILED/FINALIZING would just
+make debugging a huge big massive pain so just heads up.
 """
 
 from __future__ import annotations
@@ -57,6 +57,7 @@ from black_box_optimizer.models import (
     OptimizationContract,
     WorkerSpec,
 )
+from black_box_optimizer.persistence import RunDirectory
 from black_box_optimizer.records import TrialRecord, build_trial_record
 from black_box_optimizer.search.base import SearchAlgorithm
 from black_box_optimizer.stop_policy import (
@@ -99,14 +100,13 @@ class ApplicationController:
         algorithm: SearchAlgorithm,
         stop_policy: StopPolicyEvaluator,
         worker_spec: WorkerSpec,
-        metrics_directory: str | Path,
+        run_directory: RunDirectory,
     ) -> None:
         self._contract = contract
         self._algorithm = algorithm
         self._stop_policy = stop_policy
         self._worker_spec = worker_spec
-        self._metrics_directory = Path(metrics_directory)
-        self._metrics_directory.mkdir(parents=True, exist_ok=True)
+        self._run_directory = run_directory
 
         self._history = TrialHistory()
         self._next_trial_id = 0
@@ -169,9 +169,8 @@ class ApplicationController:
                             "EXECUTING reached without a candidate."
                         )
 
-                    metrics_path = (
-                        self._metrics_directory
-                        / f"trial_{self._next_trial_id}.csv"
+                    metrics_path = self._run_directory.metrics_path(
+                        self._next_trial_id
                     )
                     execution_result = runner.execute(
                         self._worker_spec, candidate, metrics_path
@@ -200,6 +199,9 @@ class ApplicationController:
                     )
                     self._history.append(record)
                     self._next_trial_id += 1
+                    self._run_directory.checkpoint(
+                        self._history.snapshot(), self._contract
+                    )
 
                     # Cleared so a future bug can't silently reuse a stale
                     # candidate/path/result from a previous trial.

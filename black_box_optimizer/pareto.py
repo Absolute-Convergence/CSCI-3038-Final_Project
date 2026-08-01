@@ -4,16 +4,20 @@ pareto.py
 Multi objective eligibility and Pareto evaluation.
 
 Only is_eligible() is implemented so far because it's
-dinky small, fully self contained, and given as near literal
-pseudocode in the spec, so I implemented exactly as written
+dinky small, fully self-contained, and given as near literal
+pseudocode in the docs, so I implemented exactly as written
 rather than approximating! Feel free to tweak if u need
-(I wanted to start on persistence !)
+(I wanted to finish persistence)
 
 KNOWN GAP!!! The dominance comparison (section 8.2) and the ParetoFront
 sweep algorithm (section 8.3) are not implemented. This file
 intentionally leaves that seam open rather than faking a ParetoFront or
 inventing a weighted score see controller.py's FINALIZING seam,
 which is blocked on this same gap.
+
+Also!! Mel when you finish this, I only wrote the tests
+that have to do with is_eligible() so you'll need to update
+test_pareto as well!
 """
 
 from __future__ import annotations
