@@ -115,9 +115,11 @@ the next person can resume without reconstructing recent decisions.
   but previously empty) now has its first test,
   `test_one_trial_slice.py`, chaining metrics, records, history, search,
   and stop_policy together for real per the "Integration" row of TDS
-  §12.2's minimum test layers table -- runner.py's step is simulated since
-  that branch isn't merged yet. Controller and Pareto behavior do not
-  exist yet. Aligned Draft v0.2 planning documents remain in
+  §12.2's minimum test layers table. `black_box_optimizer.runner` now
+  provides `execute()`, the synchronous subprocess boundary, merged
+  separately and confirmed compatible with `records.py`'s expected
+  execution-result shape. Controller and Pareto behavior do not exist
+  yet. Aligned Draft v0.2 planning documents remain in
   `docs/planning_baseline_v02`; Draft v0.1 is preserved in
   `docs/planning_baseline_v01`.
 - Decisions: Source files over 1,000 physical lines fail verification unless an
@@ -145,10 +147,11 @@ the next person can resume without reconstructing recent decisions.
   with only `runtime_seconds`, `exit_code`, `timed_out`, `execution_status`,
   and `error_message` -- it does not bundle `trial_id` or `metrics_path`.
   Do not revert `records.py` to match the abbreviated §11.1 table without
-  first confirming `runner.py`'s actual return shape. `StopDecision` requires
-  `continue_execution` and `termination_reason` to agree with each other
-  (a reason is required when stopping, forbidden when continuing) since an
-  inconsistent decision would be a silent bug in the controller loop.
+  first confirming `runner.py`'s actual return shape (now merged and
+  confirmed to match). `StopDecision` requires `continue_execution` and
+  `termination_reason` to agree with each other (a reason is required
+  when stopping, forbidden when continuing) since an inconsistent
+  decision would be a silent bug in the controller loop.
   KNOWN CONTRACT DEVIATION: `registry.py`'s `create_algorithm(spec)` follows
   TDS §7.1's literal `Callable[[AlgorithmSpec], SearchAlgorithm]` factory
   type, not §11.1's abbreviated `AlgorithmRegistry.create(spec, contract)`
@@ -164,27 +167,30 @@ the next person can resume without reconstructing recent decisions.
   theoretically. `RandomSearch.__init__` explicitly rejects negative seeds
   itself rather than letting NumPy's internal error surface, matching this
   project's convention of raising its own error messages.
-- Verification: All 118 tests pass under local Python (3.13.14 not
-  available in this environment; verified under 3.14 instead). The
-  repository hygiene checker passes without line-length advisories. The
-  Iris JSON loads through the public loader, and all 60 pages of the four
-  v0.2 planning documents were previously rendered and visually reviewed.
+- Verification: All tests pass under local Python (3.13.14 not available
+  in this environment; verified under 3.14 instead) -- 118 from the
+  search/integration work plus runner.py's own tests. The repository
+  hygiene checker passes without line-length advisories. The Iris JSON
+  loads through the public loader, and all 60 pages of the four v0.2
+  planning documents were previously rendered and visually reviewed.
   `tests/integration/test_one_trial_slice.py` confirms real (non-mocked)
   cross-module execution: RandomSearch proposes a candidate, a metrics CSV
   is written to disk and read back through the real `metrics.py`,
   `build_trial_record()` builds a real `TrialRecord`, and it's appended to
   a real `TrialHistory`, gated by a real `StopPolicyEvaluator` at each
-  step.
-- Next work: Build the controller state machine (TDS §5) and the runner
-  subprocess boundary (in progress on `work/2026-07-29-1918-runner`) so a
-  one-trial candidate-to-record slice can actually run end to end.
-  `records.py`, `stop_policy.py`, `history.py`, and now `search/` are all
-  available for the controller to call once `records.py`'s real input
-  shape (candidate, trial_id, metrics_path, execution_result) is
-  confirmed against runner.py's final interface.
-  `tests/integration/test_one_trial_slice.py` should be upgraded to call
-  the real `runner.execute()` once that branch merges, instead of its
-  current simulated worker step. `pareto.py` (TDS §8) is fully specified
-  with working pseudocode and is the other large remaining piece besides
-  the controller. Follow change control only if implementation requires a
-  documented contract or architecture change.
+  step. This was additionally verified against the real, merged
+  `runner.py` directly (not simulated): a real subprocess running a
+  throwaway worker script, through `RandomSearch`, the real
+  `runner.execute()`, `metrics.py`, and `build_trial_record()`, end to
+  end.
+- Next work: `runner.py` is now merged. `records.py`, `stop_policy.py`,
+  `history.py`, and `search/` are all available and confirmed compatible
+  with the real `runner.py`. `tests/integration/test_one_trial_slice.py`
+  should be upgraded to call the real `runner.execute()` instead of its
+  current simulated worker step, now that it's mergeable. The two large
+  remaining pieces are the controller state machine (TDS §5) and
+  `pareto.py` (TDS §8) -- both are fully specified with working
+  pseudocode. `persistence.py`, `results.py`, `reporting.py`, `cli.py`,
+  and the Iris worker script remain unclaimed. Follow change control only
+  if implementation requires a documented contract or architecture
+  change.
