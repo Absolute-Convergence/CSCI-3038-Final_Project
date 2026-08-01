@@ -18,6 +18,21 @@ The architectural baseline given by Mel controls when draft planning documents
 conflict with current decisions. Record and explain conflicts before changing
 public contracts or architecture.
 
+## Documentation Authority
+
+- Recorded human decisions and this repository guidance control current work.
+- `docs/architecture-baseline.md` contains the approved architectural
+  invariants and MVP boundaries.
+- Draft v0.2 under `docs/planning_baseline_v02` is the current detailed design
+  guidance but remains pending team ratification and technical approval. It is
+  not silently amended by merged code or scratch notes.
+- Draft v0.1 under `docs/planning_baseline_v01` is historical source material,
+  not current implementation guidance.
+- `README.md` reports implementation status on `main`; `KNOWN_ISSUES.md` tracks
+  reproduced defects in merged code. Neither file changes a public contract.
+- When merged code and a controlled contract disagree, preserve the behavior,
+  record the conflict, and obtain human agreement before changing either side.
+
 ## Ownership and Boundaries
 
 - Mel owns the architectural baseline, internal contracts, optimizer/search,
@@ -83,130 +98,52 @@ Explain and obtain human agreement before changing JSON, CLI, CSV,
 same requirement applies before adding a dependency or an excluded MVP
 capability.
 
+## Merged Interface Alignment Notes
+
+These are descriptions of merged behavior, not permission to change a
+controlled contract without human agreement:
+
+- `load_configuration(path)` returns one immutable `ProjectConfiguration`.
+- `create_algorithm(spec)` constructs the algorithm; the immutable
+  `OptimizationContract` is supplied later to `propose(contract, history)`.
+- `runner.execute(worker_spec, candidate, metrics_path)` returns private
+  observation fields consumed immediately by the record factory.
+- `build_trial_record(candidate, trial_id, metrics_path, execution_result)`
+  constructs one immutable `TrialRecord`.
+- `CandidateConfiguration` protects its mapping but does not prove legality
+  against an `OptimizationContract`; that validation remains a required
+  controller boundary before launch.
+- The abbreviated TDS public-interface table differs from several of these
+  signatures. Do not make code conform to that table, or treat these notes as
+  an amendment to the TDS, without human agreement and document reconciliation.
+
 ## Scratch Memory - Update After Every Change
 
 Keep this section brief and current. Update it after every repository change so
 the next person can resume without reconstructing recent decisions.
 
-- Last updated: 2026-07-31
-- Current state: Immutable configuration and candidate models are in
-  `black_box_optimizer.models`. `black_box_optimizer.config_loader` now loads
-  the approved JSON shape into an immutable `ProjectConfiguration`, preserves
-  parameter and objective order, rejects malformed or contract-drifting input,
-  and resolves relative worker paths from the configuration directory. The
-  Iris JSON is a loader-tested example. `black_box_optimizer.metrics` now
-  provides `read_trial_metrics()`, a one-row CSV metrics parser satisfying
-  the Metrics Validity contract in the Technical Design Specification (§6.2,
-  §2.3). `black_box_optimizer.records` now provides `TrialRecord` and
-  `build_trial_record()` per TDS §6.3. `black_box_optimizer.stop_policy` now
-  provides `StopDecision` and `StopPolicyEvaluator` (`before_trial()`,
-  `after_trial()`) per TDS §5.3 -- the only TerminationReason it evaluates is
-  `maximum_trials`; the other three are the controller's responsibility.
-  `black_box_optimizer.history` now provides `TrialHistory`
-  (`append()`/`snapshot()`), an in-memory, mutable-internally,
-  read-only-externally ordered collection rejecting duplicate or
-  out-of-order trial IDs; it does not perform any file I/O (that remains
-  `persistence.py`'s job). `black_box_optimizer.search` (a new subpackage)
-  now provides `ProposalResult`/`SearchAlgorithm` (`base.py`),
-  `ALGORITHM_REGISTRY`/`create_algorithm()` (`registry.py`), and the seeded
-  `RandomSearch` algorithm (`random_search.py`) per TDS §7. This is the
-  team's first NumPy dependency; `requirements.txt` now exists and must be
-  installed before running the test suite. `tests/integration/` (planned
-  but previously empty) now has its first test,
-  `test_one_trial_slice.py`, chaining metrics, records, history, search,
-  and stop_policy together for real per the "Integration" row of TDS
-  §12.2's minimum test layers table. `black_box_optimizer.runner` now
-  provides `execute()`, the synchronous subprocess boundary, merged
-  separately and confirmed compatible with `records.py`'s expected
-  execution-result shape. `examples/iris_torch/worker.py` is now
-  implemented per the demonstration contract: accepts learning_rate,
-  hidden_size, epochs, batch_size, and returns validation_accuracy,
-  validation_loss, training_time_seconds. `examples/` and
-  `examples/iris_torch/` are now importable packages (added `__init__.py`
-  files) so `tests/test_worker.py` can reference it directly.
-  `examples/iris_torch/iris-data.csv` is the bundled dataset (converted
-  from a course-provided space-separated file to a labeled CSV; no
-  network access at runtime, satisfying the locality rule). This is the
-  team's second dependency addition; `requirements.txt` now also
-  includes `torch`. Controller and Pareto behavior do not exist yet.
-  Aligned Draft v0.2 planning documents remain in
-  `docs/planning_baseline_v02`; Draft v0.1 is preserved in
-  `docs/planning_baseline_v01`.
-- Decisions: Source files over 1,000 physical lines fail verification unless an
-  exact, documented human-approved exception exists. Near-80-character lines
-  are advisory. Parameter JSON uses `kind`; `AlgorithmSpec` stores `name` and
-  `seed`; candidate mappings are defensively copied into read-only views.
-  Relative worker paths resolve from the configuration file's directory. Daily
-  work uses `work/YYYY-MM-DD-HHmm-short-topic` branches, frequent checkpoint
-  commits, and non-squash merges to `main`. After verification, an annotated
-  `checkpoint/main-<topic>-YYYY-MM-DD-HHmm` tag preserves the merge checkpoint,
-  and the completed local and remote work branches are deleted. The v0.2
-  planning set is current guidance but remains pending team ratification and
-  technical approval; each alignment change includes its reason. The loader
-  treats the documented JSON fields as exact, rejects duplicate object keys
-  and unsupported algorithms, and accepts only `random_search` for the MVP.
-  `metrics.py` raises `MetricsFormatError` for structural CSV problems and
-  `NonFiniteMetricError` for NaN/infinite values (both subclass `ValueError`)
-  so `records.py` can map failures onto the `MetricsStatus` values
-  (`missing`/`malformed`/`nonfinite`) from TDS §6.3 without string-matching
-  exception messages. KNOWN CONTRACT DEVIATION: TDS §11.1 lists
-  `build_trial_record(candidate, metrics_path, observed_fields)`, but the
-  implemented signature is `build_trial_record(candidate, trial_id,
-  metrics_path, execution_result)`. This follows the real `runner.py`
-  (branch `work/2026-07-29-1918-runner`), whose `execute()` returns a dict
-  with only `runtime_seconds`, `exit_code`, `timed_out`, `execution_status`,
-  and `error_message` -- it does not bundle `trial_id` or `metrics_path`.
-  Do not revert `records.py` to match the abbreviated §11.1 table without
-  first confirming `runner.py`'s actual return shape (now merged and
-  confirmed to match). `StopDecision` requires `continue_execution` and
-  `termination_reason` to agree with each other (a reason is required
-  when stopping, forbidden when continuing) since an inconsistent
-  decision would be a silent bug in the controller loop.
-  KNOWN CONTRACT DEVIATION: `registry.py`'s `create_algorithm(spec)` follows
-  TDS §7.1's literal `Callable[[AlgorithmSpec], SearchAlgorithm]` factory
-  type, not §11.1's abbreviated `AlgorithmRegistry.create(spec, contract)`
-  summary -- a search algorithm's contract is passed separately to
-  `propose()` and isn't needed at construction time. The
-  duplicate-candidate retry limit in `random_search.py`
-  (`_MAX_DUPLICATE_ATTEMPTS = 100`) is our own choice; TDS §7.2 requires a
-  bounded limit but does not specify a number. `_sample_value()`'s
-  categorical branch must use `np.asarray(choices, dtype=object)` before
-  calling `Generator.choice()` -- without it, NumPy silently coerces mixed
-  int/str choices into one common type (an int like `1` can come back as
-  the string `"1"`); this was caught with a real reproduction, not
-  theoretically. `RandomSearch.__init__` explicitly rejects negative seeds
-  itself rather than letting NumPy's internal error surface, matching this
-  project's convention of raising its own error messages.
-  `examples/iris_torch/worker.py`'s network architecture (one hidden
-  layer, `Linear -> ReLU -> Linear`), `CrossEntropyLoss`, `SGD`, an 80/20
-  train/validation split, and a fixed internal seed are all our own
-  choices -- the demonstration contract only specifies the CLI/metrics
-  interface, not the model internals.
-- Verification: All 129 tests pass under local Python (3.13.14 not
-  available in this environment; verified under 3.14 instead). The
-  repository hygiene checker passes without line-length advisories. A
-  `pyflakes` pass across the whole project found zero issues in any file
-  this work touched. The Iris JSON loads through the public loader, and
-  all 60 pages of the four v0.2 planning documents were previously
-  rendered and visually reviewed. `tests/integration/test_one_trial_slice.py`
-  confirms real (non-mocked) cross-module execution: RandomSearch
-  proposes a candidate, a metrics CSV is written to disk and read back
-  through the real `metrics.py`, `build_trial_record()` builds a real
-  `TrialRecord`, and it's appended to a real `TrialHistory`, gated by a
-  real `StopPolicyEvaluator` at each step (its "worker" step is still a
-  simulated CSV write, not `runner.execute()`, despite both now being
-  mergeable -- see Next work). Separately, the full real chain (search,
-  the real `runner.execute()`, the real `worker.py`, `metrics.py`, and
-  `build_trial_record()`) was verified together outside the test suite:
-  actual subprocesses training actual small neural networks on the real
-  Iris data, producing plausible accuracy (86-97% in spot checks).
-- Next work: `runner.py` and `examples/iris_torch/worker.py` both now
-  exist and are confirmed compatible with `records.py`'s expected
-  execution-result shape. `tests/integration/test_one_trial_slice.py`
-  should be upgraded to call the real `runner.execute()` and the real
-  worker instead of its current simulated worker step. The two large
-  remaining pieces are the controller state machine (TDS §5) and
-  `pareto.py` (TDS §8) -- both are fully specified with working
-  pseudocode. `persistence.py`, `results.py`, `reporting.py`, and
-  `cli.py` remain unclaimed. Follow change control only if implementation
-  requires a documented contract or architecture change.
+- Last updated: 2026-08-01
+- Current state: `main` implements immutable configuration, seeded RandomSearch,
+  synchronous subprocess execution, metrics parsing, immutable `TrialRecord`,
+  append-only `TrialHistory`, maximum-trial stop decisions, and the external
+  Iris/PyTorch worker. The real-worker integration suite exercises search,
+  runner, worker, metrics, records, history, and stop policy together. The
+  application controller, durable persistence, full Pareto evaluation,
+  results, reporting, and CLI are not on `main`, so no runnable optimizer entry
+  point exists yet. An active remote controller branch is unmerged and must not
+  be described as current `main` behavior.
+- Decisions: This documentation realignment changes no JSON, CLI, CSV,
+  `TrialRecord`, eligibility, dominance, result, persistence, or dependency
+  contract. Use the authority order and merged-interface notes above. Keep
+  PyTorch outside optimizer runtime imports. Continue timestamped work branches,
+  non-squash merges, verified checkpoint tags, and deletion of merged branches.
+- Verification: All 134 tests pass with dependencies under local Python 3.11.
+  Python 3.13.14 is installed locally but does not yet have NumPy and PyTorch,
+  so the required-interpreter suite remains unconfirmed there. The source
+  hygiene checker passes across 31 scanned source files.
+- Next work: Review and repair the unmerged application-controller branch before
+  merge, including its persistence exception mismatch and the required
+  pre-launch candidate-validation boundary. Then complete full Pareto
+  dominance/front evaluation, result construction, reporting, and CLI
+  composition. The merged runner diagnostic defect remains tracked in
+  `KNOWN_ISSUES.md`.

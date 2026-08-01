@@ -10,6 +10,13 @@ metrics to a trial-specific, one-row CSV file.
 This document records the approved foundation contracts. It does not authorize
 features beyond the MVP.
 
+This is an architectural authority document, not an implementation-status
+tracker. `README.md` describes what exists on `main`, and the scratch memory in
+`AGENTS.md` records the latest verified checkpoint and immediate next work.
+The Draft v0.2 planning documents provide detailed guidance but remain pending
+team ratification and technical approval; they do not silently override this
+approved baseline or a later recorded human decision.
+
 ## MVP Boundaries
 
 - Execution is local, synchronous, and sequential.
@@ -28,7 +35,7 @@ features beyond the MVP.
 
 ## Foundation Domain Contracts
 
-The initial model layer introduces only configuration and candidate types:
+The foundation contract layer defines these configuration and candidate types:
 
 - `ParameterKind`: `integer`, `float`, or `categorical`.
 - `ParameterDefinition`: a parameter name, kind, numeric bounds, or categorical
@@ -45,8 +52,9 @@ The initial model layer introduces only configuration and candidate types:
 
 Frozen dataclasses and tuples protect the public contracts. Constructors copy
 incoming sequences and candidate mappings so callers cannot retain mutable
-aliases. Candidate legality against a particular `OptimizationContract` will
-be implemented at a later boundary.
+aliases. `CandidateConfiguration` protects the mapping itself; legality against
+a particular `OptimizationContract` belongs to a separate validation boundary
+and is not stored as mutable candidate state.
 
 ## External JSON Shape
 
@@ -61,11 +69,11 @@ stop_policy
 
 Parameter definitions use `kind`. Algorithm configuration uses `name` and
 `seed`. Parameter order and objective order in JSON are significant and must be
-preserved by the future configuration loader.
+preserved by the configuration loader.
 
 ## Iris Demonstration Contract
 
-The planned external Iris worker accepts:
+The external Iris worker accepts:
 
 - `learning_rate`
 - `hidden_size`
@@ -78,7 +86,7 @@ It returns:
 - `validation_loss` (`minimize`)
 - `training_time_seconds` (`minimize`)
 
-The current example is configuration only. No worker, PyTorch dependency,
-search algorithm, subprocess runner, history, or Pareto evaluator is part of
-this foundation patch.
-
+The worker remains outside `black_box_optimizer`. PyTorch may support this
+example and its tests but must not be imported by, or become a runtime
+dependency of, the optimizer package. Whether each component is currently
+implemented belongs in `README.md`, not in this stable contract document.
