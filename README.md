@@ -8,9 +8,13 @@ code. It will send candidate parameters through command-line flags, receive one
 row of numerical metrics through a trial-specific CSV file, and return the
 complete non-dominated Pareto Front across multiple objectives.
 
-The repository now has immutable configuration and candidate models plus a
-validated JSON configuration loader. Search, worker execution, trial history,
-Pareto evaluation, reporting, and the optional GUI have not been implemented.
+The repository now has immutable configuration and candidate models, a
+validated JSON configuration loader, seeded RandomSearch, synchronous worker
+execution, trial history, and the Application Controller's core lifecycle
+loop. Pareto eligibility (`is_eligible()`) and persistence (run directories,
+history checkpoints) are implemented in part; the ParetoFront sweep, final
+result construction, reporting, and the optional GUI have not been
+implemented.
 
 See [docs/architecture-baseline.md](docs/architecture-baseline.md) for the
 controlling foundation contracts and MVP boundaries.
@@ -72,20 +76,21 @@ CSCI-3038-Final_Project/
 |-- AGENTS.md                         # repository rules and scratch memory
 |-- README.md                         # project overview and development map
 |-- source_hygiene.json               # global source-file hygiene settings
+|-- KNOWN_ISSUES.md                   # confirmed, reproduced bugs in merged code
 |-- black_box_optimizer/
 |   |-- __init__.py                   # implemented public model exports
 |   |-- __main__.py                   # planned module entry point
 |   |-- cli.py                        # planned CLI composition
 |   |-- models.py                     # implemented immutable foundation types
 |   |-- config_loader.py              # implemented JSON parsing and validation
-|   |-- controller.py                 # planned sequential lifecycle governor
+|   |-- controller.py                 # implemented (partial); FINALIZING is an open seam
 |   |-- runner.py                     # implemented synchronous subprocess boundary
 |   |-- metrics.py                    # implemented one-row CSV parser
 |   |-- records.py                    # implemented TrialRecord construction
 |   |-- history.py                    # implemented append-only TrialHistory
-|   |-- persistence.py                # planned durable history snapshots
+|   |-- persistence.py                # implemented (partial); run dir + history checkpoints only
 |   |-- stop_policy.py                # implemented maximum-trial decisions
-|   |-- pareto.py                     # planned eligibility and dominance
+|   |-- pareto.py                     # implemented (partial); is_eligible() only
 |   |-- results.py                    # planned ParetoFront/OptimizationResult
 |   |-- reporting.py                  # planned result export boundary
 |   `-- search/
@@ -111,8 +116,11 @@ CSCI-3038-Final_Project/
 |   |-- test_random_search.py         # implemented RandomSearch tests
 |   |-- test_worker.py                # implemented Iris worker tests
 |   |-- test_check_monoliths.py       # implemented hygiene-checker tests
+|   |-- test_controller.py            # implemented ApplicationController tests
+|   |-- test_pareto.py                # implemented is_eligible() tests
+|   |-- test_persistence.py           # implemented RunDirectory tests
 |   |-- unit/                         # planned focused unit tests
-|   |-- integration/                  # one-trial vertical slice implemented
+|   |-- integration/                  # real end-to-end chain tests implemented
 |   `-- fixtures/                     # planned workers, CSVs, and Pareto cases
 |-- docs/
 |   |-- architecture-baseline.md      # implemented controlling baseline
@@ -137,7 +145,8 @@ optimizer package.
 | Runner | CLI construction, timeout, and process observations | Search or objective interpretation |
 | Record factory | Metrics parsing and immutable trial evidence | History mutation beyond one append request |
 | Trial history | Ordered append-only records and tuple snapshots | Ranking, deletion, or rewriting evidence |
-| Pareto evaluator | Eligibility, mixed-direction dominance, full front | Weighted scoring or worker execution |
+| Persistence | Run/per-trial directories and atomic history.csv checkpoints | Ranking, evaluating, or interpreting metrics |
+| Pareto evaluator | Eligibility (implemented), dominance and full front (planned) | Weighted scoring or worker execution |
 | Reporting/GUI | Presentation of authoritative results | Optimizer state or universal-winner selection |
 
 The intended dependency direction is inward toward immutable contracts. The

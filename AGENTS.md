@@ -88,8 +88,36 @@ capability.
 Keep this section brief and current. Update it after every repository change so
 the next person can resume without reconstructing recent decisions.
 
-- Last updated: 2026-07-31
-- Current state: Immutable configuration and candidate models are in
+- Last updated: 2026-08-01
+- Current state: `black_box_optimizer.controller` now provides
+  `ApplicationController`/`ControllerState` per TDS §5, implementing the
+  SELECTING/GATING/EXECUTING/RECORDING/EVALUATING loop against the real
+  search/runner/records/persistence modules. FINALIZING is an intentional,
+  explicit seam (`_finalize()` raises `NotImplementedError`) since neither
+  the ParetoFront sweep nor reporting exist yet.
+  `black_box_optimizer.pareto` now provides `is_eligible()` per TDS §8.1,
+  implemented exactly to the literal spec pseudocode; the dominance
+  comparison and ParetoFront sweep (§8.2/§8.3) remain unimplemented.
+  `black_box_optimizer.persistence` now provides `RunDirectory`/
+  `create_run_directory()`/`CheckpointError` per TDS §9, implementing the
+  run/per-trial directory layout, `history.csv`'s schema, and atomic
+  checkpointing (§9.1/§9.2/§9.4); `pareto_front.csv`, `summary.txt`, and
+  `resolved_config.json` remain unimplemented pending the ParetoFront
+  sweep and a JSON serializer that doesn't exist yet.
+  `tests/integration/test_full_pipeline_real_worker.py` (merged
+  separately, PR #8) upgraded the real-chain proof beyond the original
+  one-trial slice to cover every `execution_status` `runner.py` can
+  actually produce (`completed`/`launch_failed`/`timed_out`/
+  `process_failed`) plus boundary parameter values. `KNOWN_ISSUES.md` is
+  a new file tracking confirmed, reproduced bugs; its one open entry
+  documents that `runner.py` captures a crashed worker's stdout/stderr
+  but never returns it, so `process_failed` trials lose their error
+  message and `persistence.py` can't yet preserve trial-local
+  stdout/stderr per TDS §10.4. Added a `Persistence` row to TDS §3.1's
+  component matrix and §11.2's dependency table (branch
+  `work/2026-08-01-1330-tds-docs`) -- neither table had one despite
+  `persistence.py` being a real, listed module.
+  Immutable configuration and candidate models are in
   `black_box_optimizer.models`. `black_box_optimizer.config_loader` now loads
   the approved JSON shape into an immutable `ProjectConfiguration`, preserves
   parameter and objective order, rejects malformed or contract-drifting input,
@@ -182,6 +210,28 @@ the next person can resume without reconstructing recent decisions.
   train/validation split, and a fixed internal seed are all our own
   choices -- the demonstration contract only specifies the CLI/metrics
   interface, not the model internals.
+  KNOWN CONTRACT DEVIATION: `ControllerState` omits TDS §5.1's literal
+  `INITIALIZING` state -- `ApplicationController` accepts already-built
+  configuration objects and an already-created `RunDirectory` rather
+  than loading JSON or creating the run directory itself, so that setup
+  happens before construction, not as a state transition. Checked
+  against TDS §10.3's failure handling matrix directly: `RECORDING`
+  catches `persistence.CheckpointError` and routes to
+  `FAILED -> FINALIZING` with `fatal_error`, the one case where
+  `RECORDING` (or `EXECUTING`, which never does) actually uses the
+  `FAILED` transition §5.1 allows for it, since `launch_failed`/
+  `process_failed`/`timed_out` are explicitly "continue if policy
+  permits" rows in that same table, not fatal ones. Mid-worker
+  `KeyboardInterrupt` cancellation (§5.3 and §10.3 both expect a
+  cancelled trial to still be recorded) is not implemented; only
+  pre-launch cancellation is handled for real, since safely terminating
+  the child would mean changing `runner.py`'s blocking
+  `subprocess.run()` call, a contract change needing team agreement
+  first. `persistence.py`'s `metric.*` column ordering is sorted
+  alphabetically for determinism, which TDS §9.2 doesn't actually
+  mandate. Trial directories stay zero-indexed (`trial_0000`) to match
+  `trial_id` everywhere else in the project, rather than the
+  1-indexed-looking example in §9.1.
 - Verification: All 129 tests pass under local Python (3.13.14 not
   available in this environment; verified under 3.14 instead). The
   repository hygiene checker passes without line-length advisories. A
@@ -200,13 +250,29 @@ the next person can resume without reconstructing recent decisions.
   `build_trial_record()`) was verified together outside the test suite:
   actual subprocesses training actual small neural networks on the real
   Iris data, producing plausible accuracy (86-97% in spot checks).
-- Next work: `runner.py` and `examples/iris_torch/worker.py` both now
-  exist and are confirmed compatible with `records.py`'s expected
-  execution-result shape. `tests/integration/test_one_trial_slice.py`
-  should be upgraded to call the real `runner.execute()` and the real
-  worker instead of its current simulated worker step. The two large
-  remaining pieces are the controller state machine (TDS §5) and
-  `pareto.py` (TDS §8) -- both are fully specified with working
-  pseudocode. `persistence.py`, `results.py`, `reporting.py`, and
-  `cli.py` remain unclaimed. Follow change control only if implementation
-  requires a documented contract or architecture change.
+  `tests/integration/test_full_pipeline_real_worker.py` (PR #8) later
+  replaced the simulated-worker approach above with a real chain
+  covering every `execution_status` `runner.py` can produce. controller/
+  pareto/persistence work: 177 tests passing across `test_controller.py`,
+  `test_pareto.py`, `test_persistence.py`, and the real end-to-end
+  `tests/integration/test_controller_real_pipeline.py` (proves the
+  actual `ApplicationController` class orchestrates real search/runner/
+  worker/persistence together, not just simulated pieces). Hygiene
+  checker passes clean. Grepped the whole repository for AI/Claude/
+  Anthropic references: none found.
+- Next work: `controller.py`'s `FINALIZING` seam and `pareto.py`'s
+  dominance/ParetoFront sweep (§8.2/§8.3) are the two large remaining
+  pieces, and they're linked -- `_finalize()` can't do anything real
+  until the sweep exists. `results.py` and `reporting.py` remain
+  unclaimed and are also blocked on the same sweep. `persistence.py`'s
+  `pareto_front.csv`/`summary.txt` are blocked the same way;
+  `resolved_config.json` needs a JSON serializer that doesn't exist yet
+  (`config_loader.py` only reads). Two real `runner.py` gaps are
+  tracked in `KNOWN_ISSUES.md`: `process_failed` trials lose their
+  error message, and stdout/stderr get captured then discarded --
+  fixing that unblocks both the error-message issue and
+  `persistence.py`'s trial-local `stdout.txt`/`stderr.txt` preservation
+  (TDS §10.4). `cli.py` is blocked on the controller's `FINALIZING`
+  producing real, exit-code-distinguishing outcomes. Follow change
+  control only if implementation requires a documented contract or
+  architecture change.
