@@ -1,0 +1,255 @@
+"""
+persistence.py
+
+This file owns one optimization run's on-disk layout. Its job is
+keeping track of the run directory, handing out the correct per-trial
+paths, and writing atomic history checkpoints, following TDS section 9.
+
+Right now RunDirectory only owns the parts that are actually unblocked.
+The finalization outputs and resolved_config.json are still waiting on
+other pieces of the project.
+
+Keep an eye out (!!!) for the KNOWN GAP and KNOWN DEVIATION notes
+throughout the file. They cover the missing finalization files,
+stdout/stderr preservation, bounded error messages, trial directory
+numbering, and deterministic metric column ordering.
+"""
+
+from __future__ import annotations
+
+import csv
+import os
+import secrets
+import tempfile
+from collections.abc import Sequence
+from datetime import datetime
+from pathlib import Path
+
+from black_box_optimizer.models import OptimizationContract
+from black_box_optimizer.pareto import is_eligible
+from black_box_optimizer.records import TrialRecord
+
+_TRIAL_DIRECTORY_DIGITS = 4
+
+
+class CheckpointError(RuntimeError):
+    """
+    Raised when history.csv cannot be atomically replaced.
+
+    TDS section 10.3 treats this as fatal, but the in-memory TrialRecord
+    appended before the checkpoint attempt is not lost. Callers should
+    finalize with fatal_error instead of losing that evidence.
+    """
+
+
+# Fixed columns required by the TDS in order
+# Any param and metric columns go in the middle
+# error_message always comes last
+_FIXED_COLUMNS = (
+    "trial_id",
+    "execution_status",
+    "metrics_status",
+    "execution_succeeded",
+    "objective_eligible",
+    "runtime_seconds",
+    "exit_code",
+    "timed_out",
+)
+
+
+class RunDirectory:
+    """
+    Owns one run's directory layout, per-trial paths, and history
+    checkpoints.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._trials_path = path / "trials"
+        self._trials_path.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def path(self) -> Path:
+        """The run's own directory."""
+        return self._path
+
+    def trial_directory(self, trial_id: int) -> Path:
+        """Create, if needed, and return one trial's own directory."""
+        directory = self._trials_path / self._trial_directory_name(trial_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory
+
+    def metrics_path(self, trial_id: int) -> Path:
+        """
+        Return where one trial's metrics.csv belongs.
+
+        The trial directory is created first if it does not already
+        exist.
+        """
+        return self.trial_directory(trial_id) / "metrics.csv"
+
+    def checkpoint(
+        self,
+        history: Sequence[TrialRecord],
+        contract: OptimizationContract,
+    ) -> None:
+        """
+        Atomically replace history.csv with the newest flattened history.
+
+        Everything is written to a temporary file first, then swapped
+        into place with os.replace(). If something goes wrong halfway
+        through, the previous checkpoint stays intact instead of being
+        left half-written.
+
+        If checkpointing fails, it is treated as fatal according to TDS
+        section 10.3.
+        """
+        destination = self._path / "history.csv"
+        fieldnames = _build_fieldnames(history, contract)
+
+        fd, temp_name = tempfile.mkstemp(
+            dir=self._path, prefix="history.", suffix=".csv.tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                writer.writeheader()
+
+                for record in history:
+                    writer.writerow(
+                        _flatten_record(record, contract, fieldnames)
+                    )
+
+            os.replace(temp_name, destination)
+
+        except OSError as error:
+            Path(temp_name).unlink(missing_ok=True)
+
+            # TDS section 10 4 wants the trial identifier included when
+            # one has already been assigned
+            # The last record is the one appended before this checkpoint
+            trial_note = (
+                f" (most recent trial_id: {history[-1].trial_id})"
+                if history
+                else ""
+            )
+
+            raise CheckpointError(
+                "Failed to checkpoint history.csv; the previously "
+                f"committed file (if any) was retained{trial_note}: "
+                f"{error}"
+            ) from error
+
+    @staticmethod
+    def _trial_directory_name(trial_id: int) -> str:
+        # KNOWN DEVIATION
+        # The TDS example starts at trial_0001 but trial IDs are zero
+        # indexed everywhere else in this project
+        # Keeping that same numbering here avoids creating an off by one
+        # just to match what looks like an illustrative example
+        return f"trial_{trial_id:0{_TRIAL_DIRECTORY_DIGITS}d}"
+
+
+def create_run_directory(base_directory: str | Path) -> RunDirectory:
+    """
+    Create a brand-new run directory.
+
+    Runs are never resumed or overwritten here. Every optimization gets
+    its own uniquely named directory so previous runs stay untouched.
+    """
+    base = Path(base_directory)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    suffix = secrets.token_hex(3)
+    run_path = base / f"run_{timestamp}_{suffix}"
+
+    run_path.mkdir(parents=True, exist_ok=False)
+
+    return RunDirectory(run_path)
+
+
+def _build_fieldnames(
+    history: Sequence[TrialRecord],
+    contract: OptimizationContract,
+) -> list[str]:
+    """
+    Build the history.csv column order.
+
+    The fixed columns come first, followed by every declared parameter,
+    every metric observed so far, and finally error_message.
+
+    KNOWN DEVIATION!!! Metric columns are sorted alphabetically to keep
+    the output deterministic. TDS section 9.2 does not require a
+    particular ordering for them.
+    """
+    param_columns = [
+        f"param.{parameter.name}" for parameter in contract.parameters
+    ]
+
+    metric_names: set[str] = set()
+
+    for record in history:
+        metric_names.update(record.metrics.keys())
+
+    metric_columns = [
+        f"metric.{name}" for name in sorted(metric_names)
+    ]
+
+    return [
+        *_FIXED_COLUMNS,
+        *param_columns,
+        *metric_columns,
+        "error_message",
+    ]
+
+
+def _flatten_record(
+    record: TrialRecord,
+    contract: OptimizationContract,
+    fieldnames: Sequence[str],
+) -> dict[str, object]:
+    """
+    Flatten one TrialRecord into a history.csv row.
+
+    KNOWN GAP!!! TDS section 10.4 says unbounded worker output must never
+    be dumped into history.csv. error_message is currently either None
+    or a short runner message, so writing it directly is safe for now.
+    Once real stderr can flow into error_message, it must be bounded
+    before reaching this function.
+    """
+    row: dict[str, object] = {
+        "trial_id": record.trial_id,
+        "execution_status": record.execution_status,
+        "metrics_status": record.metrics_status,
+        "execution_succeeded": record.execution_succeeded,
+        "objective_eligible": is_eligible(record, contract),
+        "runtime_seconds": record.runtime_seconds,
+        "exit_code": record.exit_code,
+        "timed_out": record.timed_out,
+        "error_message": record.error_message,
+    }
+
+    for parameter in contract.parameters:
+        # Every declared parameter should exist in every TrialRecord
+        # A missing one means something went wrong earlier in the pipeline
+        # Better to fail loudly than quietly write incorrect history
+        row[f"param.{parameter.name}"] = record.parameters[parameter.name]
+
+    for field in fieldnames:
+        if field.startswith("metric."):
+            metric_name = field[len("metric.") :]
+            row[field] = record.metrics.get(metric_name, "")
+
+    return row
+
+
+# KNOWN GAP
+# TDS sections 9 1 and 10 4 expect captured stdout and stderr to be
+# preserved in each trial directory
+# runner.py captures them but does not return them yet so RunDirectory
+# has nothing available to write
+
+# KNOWN GAP
+# pareto_front.csv and summary.txt need OptimizationResult and the full
+# ParetoFront sweep which do not exist yet
+# resolved_config.json also needs a serializer because config_loader.py
+# currently only reads project configuration
