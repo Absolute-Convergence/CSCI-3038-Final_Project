@@ -118,8 +118,18 @@ the next person can resume without reconstructing recent decisions.
   §12.2's minimum test layers table. `black_box_optimizer.runner` now
   provides `execute()`, the synchronous subprocess boundary, merged
   separately and confirmed compatible with `records.py`'s expected
-  execution-result shape. Controller and Pareto behavior do not exist
-  yet. Aligned Draft v0.2 planning documents remain in
+  execution-result shape. `examples/iris_torch/worker.py` is now
+  implemented per the demonstration contract: accepts learning_rate,
+  hidden_size, epochs, batch_size, and returns validation_accuracy,
+  validation_loss, training_time_seconds. `examples/` and
+  `examples/iris_torch/` are now importable packages (added `__init__.py`
+  files) so `tests/test_worker.py` can reference it directly.
+  `examples/iris_torch/iris-data.csv` is the bundled dataset (converted
+  from a course-provided space-separated file to a labeled CSV; no
+  network access at runtime, satisfying the locality rule). This is the
+  team's second dependency addition; `requirements.txt` now also
+  includes `torch`. Controller and Pareto behavior do not exist yet.
+  Aligned Draft v0.2 planning documents remain in
   `docs/planning_baseline_v02`; Draft v0.1 is preserved in
   `docs/planning_baseline_v01`.
 - Decisions: Source files over 1,000 physical lines fail verification unless an
@@ -167,30 +177,36 @@ the next person can resume without reconstructing recent decisions.
   theoretically. `RandomSearch.__init__` explicitly rejects negative seeds
   itself rather than letting NumPy's internal error surface, matching this
   project's convention of raising its own error messages.
-- Verification: All tests pass under local Python (3.13.14 not available
-  in this environment; verified under 3.14 instead) -- 118 from the
-  search/integration work plus runner.py's own tests. The repository
-  hygiene checker passes without line-length advisories. The Iris JSON
-  loads through the public loader, and all 60 pages of the four v0.2
-  planning documents were previously rendered and visually reviewed.
-  `tests/integration/test_one_trial_slice.py` confirms real (non-mocked)
-  cross-module execution: RandomSearch proposes a candidate, a metrics CSV
-  is written to disk and read back through the real `metrics.py`,
-  `build_trial_record()` builds a real `TrialRecord`, and it's appended to
-  a real `TrialHistory`, gated by a real `StopPolicyEvaluator` at each
-  step. This was additionally verified against the real, merged
-  `runner.py` directly (not simulated): a real subprocess running a
-  throwaway worker script, through `RandomSearch`, the real
-  `runner.execute()`, `metrics.py`, and `build_trial_record()`, end to
-  end.
-- Next work: `runner.py` is now merged. `records.py`, `stop_policy.py`,
-  `history.py`, and `search/` are all available and confirmed compatible
-  with the real `runner.py`. `tests/integration/test_one_trial_slice.py`
-  should be upgraded to call the real `runner.execute()` instead of its
-  current simulated worker step, now that it's mergeable. The two large
+  `examples/iris_torch/worker.py`'s network architecture (one hidden
+  layer, `Linear -> ReLU -> Linear`), `CrossEntropyLoss`, `SGD`, an 80/20
+  train/validation split, and a fixed internal seed are all our own
+  choices -- the demonstration contract only specifies the CLI/metrics
+  interface, not the model internals.
+- Verification: All 129 tests pass under local Python (3.13.14 not
+  available in this environment; verified under 3.14 instead). The
+  repository hygiene checker passes without line-length advisories. A
+  `pyflakes` pass across the whole project found zero issues in any file
+  this work touched. The Iris JSON loads through the public loader, and
+  all 60 pages of the four v0.2 planning documents were previously
+  rendered and visually reviewed. `tests/integration/test_one_trial_slice.py`
+  confirms real (non-mocked) cross-module execution: RandomSearch
+  proposes a candidate, a metrics CSV is written to disk and read back
+  through the real `metrics.py`, `build_trial_record()` builds a real
+  `TrialRecord`, and it's appended to a real `TrialHistory`, gated by a
+  real `StopPolicyEvaluator` at each step (its "worker" step is still a
+  simulated CSV write, not `runner.execute()`, despite both now being
+  mergeable -- see Next work). Separately, the full real chain (search,
+  the real `runner.execute()`, the real `worker.py`, `metrics.py`, and
+  `build_trial_record()`) was verified together outside the test suite:
+  actual subprocesses training actual small neural networks on the real
+  Iris data, producing plausible accuracy (86-97% in spot checks).
+- Next work: `runner.py` and `examples/iris_torch/worker.py` both now
+  exist and are confirmed compatible with `records.py`'s expected
+  execution-result shape. `tests/integration/test_one_trial_slice.py`
+  should be upgraded to call the real `runner.execute()` and the real
+  worker instead of its current simulated worker step. The two large
   remaining pieces are the controller state machine (TDS §5) and
   `pareto.py` (TDS §8) -- both are fully specified with working
-  pseudocode. `persistence.py`, `results.py`, `reporting.py`, `cli.py`,
-  and the Iris worker script remain unclaimed. Follow change control only
-  if implementation requires a documented contract or architecture
-  change.
+  pseudocode. `persistence.py`, `results.py`, `reporting.py`, and
+  `cli.py` remain unclaimed. Follow change control only if implementation
+  requires a documented contract or architecture change.
