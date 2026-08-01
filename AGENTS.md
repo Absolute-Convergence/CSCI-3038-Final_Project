@@ -106,8 +106,20 @@ the next person can resume without reconstructing recent decisions.
   (`append()`/`snapshot()`), an in-memory, mutable-internally,
   read-only-externally ordered collection rejecting duplicate or
   out-of-order trial IDs; it does not perform any file I/O (that remains
-  `persistence.py`'s job). Search, controller, and Pareto behavior do not
-  exist yet. Aligned Draft v0.2 planning documents remain in
+  `persistence.py`'s job). `black_box_optimizer.search` (a new subpackage)
+  now provides `ProposalResult`/`SearchAlgorithm` (`base.py`),
+  `ALGORITHM_REGISTRY`/`create_algorithm()` (`registry.py`), and the seeded
+  `RandomSearch` algorithm (`random_search.py`) per TDS §7. This is the
+  team's first NumPy dependency; `requirements.txt` now exists and must be
+  installed before running the test suite. `tests/integration/` (planned
+  but previously empty) now has its first test,
+  `test_one_trial_slice.py`, chaining metrics, records, history, search,
+  and stop_policy together for real per the "Integration" row of TDS
+  §12.2's minimum test layers table. `black_box_optimizer.runner` now
+  provides `execute()`, the synchronous subprocess boundary, merged
+  separately and confirmed compatible with `records.py`'s expected
+  execution-result shape. Controller and Pareto behavior do not exist
+  yet. Aligned Draft v0.2 planning documents remain in
   `docs/planning_baseline_v02`; Draft v0.1 is preserved in
   `docs/planning_baseline_v01`.
 - Decisions: Source files over 1,000 physical lines fail verification unless an
@@ -135,15 +147,50 @@ the next person can resume without reconstructing recent decisions.
   with only `runtime_seconds`, `exit_code`, `timed_out`, `execution_status`,
   and `error_message` -- it does not bundle `trial_id` or `metrics_path`.
   Do not revert `records.py` to match the abbreviated §11.1 table without
-  first confirming `runner.py`'s actual return shape. `StopDecision` requires
-  `continue_execution` and `termination_reason` to agree with each other
-  (a reason is required when stopping, forbidden when continuing) since an
-  inconsistent decision would be a silent bug in the controller loop.
-- Verification: All 26 tests pass under Python 3.13 in 0.035 seconds.
-  The repository hygiene checker passes without line-length advisories. 
-  The Iris JSON loads through the public loader, and all 60 pages of the 
-  four v0.2 planning documents were previously rendered and visually reviewed.
-- Next work: Most of the one-trial verticle slice is complete. The only things
-  that appear to be left is the controller. Eventually we will need to implement
-  the search features as that remains one of the largest independent systems yet
-  completed.
+  first confirming `runner.py`'s actual return shape (now merged and
+  confirmed to match). `StopDecision` requires `continue_execution` and
+  `termination_reason` to agree with each other (a reason is required
+  when stopping, forbidden when continuing) since an inconsistent
+  decision would be a silent bug in the controller loop.
+  KNOWN CONTRACT DEVIATION: `registry.py`'s `create_algorithm(spec)` follows
+  TDS §7.1's literal `Callable[[AlgorithmSpec], SearchAlgorithm]` factory
+  type, not §11.1's abbreviated `AlgorithmRegistry.create(spec, contract)`
+  summary -- a search algorithm's contract is passed separately to
+  `propose()` and isn't needed at construction time. The
+  duplicate-candidate retry limit in `random_search.py`
+  (`_MAX_DUPLICATE_ATTEMPTS = 100`) is our own choice; TDS §7.2 requires a
+  bounded limit but does not specify a number. `_sample_value()`'s
+  categorical branch must use `np.asarray(choices, dtype=object)` before
+  calling `Generator.choice()` -- without it, NumPy silently coerces mixed
+  int/str choices into one common type (an int like `1` can come back as
+  the string `"1"`); this was caught with a real reproduction, not
+  theoretically. `RandomSearch.__init__` explicitly rejects negative seeds
+  itself rather than letting NumPy's internal error surface, matching this
+  project's convention of raising its own error messages.
+- Verification: All tests pass under local Python (3.13.14 not available
+  in this environment; verified under 3.14 instead) -- 118 from the
+  search/integration work plus runner.py's own tests. The repository
+  hygiene checker passes without line-length advisories. The Iris JSON
+  loads through the public loader, and all 60 pages of the four v0.2
+  planning documents were previously rendered and visually reviewed.
+  `tests/integration/test_one_trial_slice.py` confirms real (non-mocked)
+  cross-module execution: RandomSearch proposes a candidate, a metrics CSV
+  is written to disk and read back through the real `metrics.py`,
+  `build_trial_record()` builds a real `TrialRecord`, and it's appended to
+  a real `TrialHistory`, gated by a real `StopPolicyEvaluator` at each
+  step. This was additionally verified against the real, merged
+  `runner.py` directly (not simulated): a real subprocess running a
+  throwaway worker script, through `RandomSearch`, the real
+  `runner.execute()`, `metrics.py`, and `build_trial_record()`, end to
+  end.
+- Next work: `runner.py` is now merged. `records.py`, `stop_policy.py`,
+  `history.py`, and `search/` are all available and confirmed compatible
+  with the real `runner.py`. `tests/integration/test_one_trial_slice.py`
+  should be upgraded to call the real `runner.execute()` instead of its
+  current simulated worker step, now that it's mergeable. The two large
+  remaining pieces are the controller state machine (TDS §5) and
+  `pareto.py` (TDS §8) -- both are fully specified with working
+  pseudocode. `persistence.py`, `results.py`, `reporting.py`, `cli.py`,
+  and the Iris worker script remain unclaimed. Follow change control only
+  if implementation requires a documented contract or architecture
+  change.
