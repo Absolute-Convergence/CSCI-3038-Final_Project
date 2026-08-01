@@ -93,9 +93,12 @@ CSCI-3038-Final_Project/
 |       |-- registry.py               # implemented built-in algorithm registry
 |       `-- random_search.py          # implemented seeded RandomSearch
 |-- examples/
+|   |-- __init__.py                   # implemented, makes examples importable
 |   `-- iris_torch/
+|       |-- __init__.py               # implemented package marker
 |       |-- iris_config.json          # implemented example configuration
-|       `-- worker.py                 # planned external PyTorch worker
+|       |-- iris-data.csv             # implemented bundled Iris dataset
+|       `-- worker.py                 # implemented external PyTorch worker
 |-- tests/
 |   |-- test_models.py                # implemented foundation-model tests
 |   |-- test_metrics.py               # implemented metrics-parser tests
@@ -106,6 +109,7 @@ CSCI-3038-Final_Project/
 |   |-- test_search_base.py           # implemented ProposalResult tests
 |   |-- test_search_registry.py       # implemented algorithm-registry tests
 |   |-- test_random_search.py         # implemented RandomSearch tests
+|   |-- test_worker.py                # implemented Iris worker tests
 |   |-- test_check_monoliths.py       # implemented hygiene-checker tests
 |   |-- unit/                         # planned focused unit tests
 |   |-- integration/                  # one-trial vertical slice implemented
@@ -207,8 +211,9 @@ timestamped working branches.
 
 ## Development Verification
 
-Install dependencies (required as of `search/random_search.py`, which uses
-NumPy for seeded sampling per TDS §7.2):
+Install dependencies: NumPy is required as of `search/random_search.py`
+(seeded sampling per TDS §7.2), and PyTorch is required as of
+`examples/iris_torch/worker.py` (the example classifier):
 
 ```powershell
 py -3.13 -m pip install -r requirements.txt
