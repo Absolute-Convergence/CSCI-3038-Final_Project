@@ -261,10 +261,9 @@ Run the repository-wide source hygiene check:
 py -3.13 tools\check_monoliths.py
 ```
 
-At the 2026-08-01 documentation checkpoint, all 134 tests pass in the local
-Python 3.11 environment with dependencies installed, and the source-hygiene
-check passes. Python 3.13.14 is installed locally but still needs the project
-dependencies before the required-interpreter suite can be confirmed there.
+At the 2026-08-01 documentation checkpoint, all 134 tests pass under the
+course-required Python 3.13.14 interpreter and under the default local Python
+3.11 environment. The source-hygiene check also passes.
 
 The application does not yet have a runnable optimizer entry point. On `main`,
 the next composition boundary is the sequential application controller plus

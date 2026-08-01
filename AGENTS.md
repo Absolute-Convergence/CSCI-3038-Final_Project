@@ -137,10 +137,11 @@ the next person can resume without reconstructing recent decisions.
   contract. Use the authority order and merged-interface notes above. Keep
   PyTorch outside optimizer runtime imports. Continue timestamped work branches,
   non-squash merges, verified checkpoint tags, and deletion of merged branches.
-- Verification: All 134 tests pass with dependencies under local Python 3.11.
-  Python 3.13.14 is installed locally but does not yet have NumPy and PyTorch,
-  so the required-interpreter suite remains unconfirmed there. The source
-  hygiene checker passes across 31 scanned source files.
+- Verification: All 134 tests pass under course-required Python 3.13.14 and
+  default local Python 3.11. Python 3.13 has NumPy 2.5.1 and CPU-only PyTorch
+  2.13.0 installed through `py -3.13 -m pip`; unqualified `python` and `pip`
+  remain on the intended AppData Python 3.11 installation. The source-hygiene
+  checker passes across 31 scanned source files.
 - Next work: Review and repair the unmerged application-controller branch before
   merge, including its persistence exception mismatch and the required
   pre-launch candidate-validation boundary. Then complete full Pareto
