@@ -2,47 +2,23 @@
 controller.py
 
 The Controller! This is the deterministic finite-state lifecycle
-governor from section 5 of the TDS. Its whole job is deciding what
-state comes next and making sure only one worker is ever authorized at
-a time.
+governor from TDS section 5. It owns state transitions and makes sure
+only one worker is ever authorized at a time.
 
-It doesn’t actually know anything about optimization itself. Candidate
-generation belongs to the search algorithm, execution budgeting belongs
-to StopPolicy, actually running the worker belongs to runner.execute(),
-and turning that run into a TrialRecord belongs to
-build_trial_record(). The controller just coordinates everybody else.
+It doesn't know nuthin about optimization itself. The search algorithm
+proposes candidates, StopPolicy decides when to stop, runner.execute()
+launches the worker, and build_trial_record() turns the result into a
+TrialRecord. The controller just coordinates everybody else.
 
-It also doesn’t load JSON (that’s config_loader.py’s deal). It
-expects already built config objects and also an already created
-RunDirectory to handle any metrics files and history checkpoints.
+It also expects already-built configuration objects and an
+already-created RunDirectory. Loading JSON and the rest of the setup
+happen before the controller is ever constructed.
 
-KNOWN GAP!!! FINALIZING isn’t actually finished yet. According to the
-spec it’s supposed to derive a ParetoFront, build an
-OptimizationResult, then hand everything off to a Reporter. The catch
-is… results.py and reporting.py don’t exist yet, and pareto.py only
-implements is_eligible(), not the actual Pareto sweep. So _finalize()
-is an intentional seam for now it raises NotImplementedError.
-
-(The good news is that by the time _finalize() is done, the other
-important stuff is totally correct. The controller state,
-termination_reason, and the full TrialHistory have all been built.
-The only thing missing is that final Pareto/report step.)
-
-LAST KNOWN GAP!!! Mid-worker cancellation isn’t implemented yet. The
-spec says a KeyboardInterrupt during a worker should terminate the child
-process and still record a cancelled trial. Right now only pre-launch
-cancellation is handled for real. If Ctrl+C lands while the worker is
-running, the interrupt is raised again instead of pretending everything
-is fine. Safely killing the child would require changing runner.pys
-blocking subprocess.run() call, and that’s a contract change so best to
-discuss amongst I suppose.
-
-Final last note! Unexpected exceptions (anything besides
-KeyboardInterrupt) from runner.execute(), build_trial_record(), or the
-search/stop-policy collaborators are allowed to bubble up on purpose.
-Those are programming bugs, not normal controller states, because I
-fear that quietly routing them through FAILED/FINALIZING would just
-make debugging a huge big massive pain so just heads up.
+Keep an eye out (!!!) for the KNOWN DEVIATION and KNOWN GAP notes
+throughout the file. They point out the omitted INITIALIZING state,
+checkpoint failure handling, mid-worker cancellation, and the
+unfinished FINALIZING step while the project waits on pareto.py,
+results.py, reporting.py, and their associated stuffs.
 """
 
 from __future__ import annotations
@@ -57,7 +33,7 @@ from black_box_optimizer.models import (
     OptimizationContract,
     WorkerSpec,
 )
-from black_box_optimizer.persistence import RunDirectory
+from black_box_optimizer.persistence import CheckpointError, RunDirectory
 from black_box_optimizer.records import TrialRecord, build_trial_record
 from black_box_optimizer.search.base import SearchAlgorithm
 from black_box_optimizer.stop_policy import (
@@ -67,7 +43,13 @@ from black_box_optimizer.stop_policy import (
 
 
 class ControllerState(StrEnum):
-    """States outlined in the state model."""
+    """
+    States used by the controller lifecycle.
+
+    KNOWN DEVIATION!!! The TDS also includes INITIALIZING, but all of
+    that setup happens before ApplicationController is constructed.
+    This state machine therefore begins at SELECTING.
+    """
 
     SELECTING = "selecting"
     GATING = "gating"
@@ -79,12 +61,12 @@ class ControllerState(StrEnum):
     STOPPED = "stopped"
 
 
-# EXECUTING: the child process may still be alive, nothing to record yet.
-# RECORDING: runner.execute() has already returned, but appending to
-# history and advancing the trial counter isn't atomic -- an interrupt
-# partway through could leave that commit half-done.
-# A KeyboardInterrupt caught in either is raised again instead of being
-# treated as a clean pre-launch cancellation.
+# KNOWN GAP
+# EXECUTING may still have a living child process
+# RECORDING has a finished worker but may be halfway through committing
+# the completed trial to history
+# An interrupt in either state is raised again because neither can be
+# honestly treated as a clean prelaunch cancellation yet
 _UNSAFE_TO_CANCEL_STATES = (
     ControllerState.EXECUTING,
     ControllerState.RECORDING,
@@ -111,6 +93,9 @@ class ApplicationController:
         self._history = TrialHistory()
         self._next_trial_id = 0
 
+        # KNOWN DEVIATION
+        # The caller already handled the TDS INITIALIZING work so the
+        # controller starts directly at SELECTING
         self.state: ControllerState = ControllerState.SELECTING
         self.termination_reason: TerminationReason | None = None
 
@@ -121,14 +106,15 @@ class ApplicationController:
 
     def run(self) -> None:
         """
-        Run the state machine until FINALIZING is reached.
+        Run the state machine until the optimization is finished.
 
-        Always raises NotImplementedError once FINALIZING is reached --
-        see the module docstring's KNOWN GAP notes. self.state,
-        self.termination_reason, and self.history are already correct
-        by the time that happens.
+        KNOWN GAP!!! FINALIZING currently raises NotImplementedError
+        because Pareto evaluation and reporting are not implemented yet.
+        By the time that happens, state, termination_reason, and history
+        are already correct and available for inspection.
 
-        This is meant to be replaced whenever! See known gaps
+        Once _finalize() is implemented, run() will continue into
+        STOPPED and return normally.
         """
         candidate: CandidateConfiguration | None = None
         metrics_path: Path | None = None
@@ -147,9 +133,9 @@ class ApplicationController:
                         self.termination_reason = "search_exhausted"
                         self.state = ControllerState.FINALIZING
                     else:
-                        # proposal_failed: the search algorithm could not
-                        # produce a usable candidate or a clean exhaustion
-                        # signal, which is a case the run cannot recover
+                        # proposal_failed means the search algorithm could
+                        # not produce a candidate or a clean exhaustion signal
+                        # the controller cannot recover from that
                         self.termination_reason = "fatal_error"
                         self.state = ControllerState.FAILED
 
@@ -172,6 +158,11 @@ class ApplicationController:
                     metrics_path = self._run_directory.metrics_path(
                         self._next_trial_id
                     )
+
+                    # KNOWN GAP
+                    # runner.execute uses a blocking subprocess call so this
+                    # controller cannot safely terminate and record a cancelled
+                    # child process if Ctrl C lands during execution
                     execution_result = runner.execute(
                         self._worker_spec, candidate, metrics_path
                     )
@@ -199,15 +190,25 @@ class ApplicationController:
                     )
                     self._history.append(record)
                     self._next_trial_id += 1
-                    self._run_directory.checkpoint(
-                        self._history.snapshot(), self._contract
-                    )
 
-                    # Cleared so a future bug can't silently reuse a stale
-                    # candidate/path/result from a previous trial.
+                    # Cleared so a future bug cannot silently reuse stale
+                    # trial data from the previous worker
                     candidate = None
                     metrics_path = None
                     execution_result = None
+
+                    try:
+                        self._run_directory.checkpoint(
+                            self._history.snapshot(), self._contract
+                        )
+                    except CheckpointError:
+                        # TDS section 10 3 specifically treats checkpoint
+                        # failure as fatal but keeps the in memory record
+                        # so this one expected failure becomes a controller
+                        # state instead of bubbling out like a programming bug
+                        self.termination_reason = "fatal_error"
+                        self.state = ControllerState.FAILED
+                        continue
 
                     self.state = ControllerState.EVALUATING
 
@@ -222,6 +223,8 @@ class ApplicationController:
                         self.state = ControllerState.FINALIZING
 
                 elif self.state is ControllerState.FAILED:
+                    # FAILED is only for fatal lifecycle outcomes defined by
+                    # the TDS and not for arbitrary programming exceptions
                     self.termination_reason = (
                         self.termination_reason or "fatal_error"
                     )
@@ -229,32 +232,45 @@ class ApplicationController:
 
                 elif self.state is ControllerState.FINALIZING:
                     self._finalize()
-                    # pragma: no cover -- unreachable until finalize exists
+
+                    # Unreachable until the known FINALIZING gap is filled
+                    # pragma: no cover
                     self.state = ControllerState.STOPPED
 
                 elif self.state is ControllerState.STOPPED:
                     return
 
                 else:
+                    # Every ControllerState should have an explicit branch
+                    # so a future state cannot create a silent infinite loop
                     raise RuntimeError(
                         f"Unhandled controller state: {self.state!r}"
                     )
 
         except KeyboardInterrupt:
+            # KNOWN GAP
+            # Prelaunch cancellation is safe to finalize normally
+            # Midworker or midrecording cancellation is raised again because
+            # the controller cannot guarantee a clean child shutdown or commit
             if self.state in _UNSAFE_TO_CANCEL_STATES:
                 raise
+
             self.termination_reason = "user_cancelled"
             self.state = ControllerState.FINALIZING
             self._finalize()
-            # pragma: no cover -- unreachable until finalize exists
+
+            # Unreachable until the known FINALIZING gap is filled
+            # pragma: no cover
             self.state = ControllerState.STOPPED
 
     def _finalize(self) -> None:
         """
         Derive the ParetoFront, build an OptimizationResult, and hand it
-        to a Reporter
+        to a Reporter.
 
-        Intentionally unimplemented as a known gap!
+        KNOWN GAP!!! pareto.py does not have the full Pareto sweep yet,
+        and results.py and reporting.py do not exist. This method stays
+        as an explicit seam until those pieces are ready.
         """
         raise NotImplementedError(
             "FINALIZING requires pareto.py (ParetoFront/OptimizationResult) "
