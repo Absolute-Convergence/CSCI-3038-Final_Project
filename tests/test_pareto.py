@@ -12,12 +12,12 @@ from black_box_optimizer.models import (
     ParameterKind,
 )
 from black_box_optimizer.pareto import (
-    ParetoFront,
     build_pareto_front,
     dominates,
     is_eligible,
 )
 from black_box_optimizer.records import TrialRecord
+from black_box_optimizer.results import ParetoFront
 
 
 def make_contract() -> OptimizationContract:

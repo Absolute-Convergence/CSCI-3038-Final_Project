@@ -131,7 +131,9 @@ the next person can resume without reconstructing recent decisions.
   incomplete. The active stack validates proposed candidates before launch and
   now implements eligibility, mixed-direction dominance, the complete
   history-ordered `ParetoFront`, and immutable `OptimizationResult` status
-  semantics. Invalid proposals launch no worker and enter fatal finalization.
+  semantics. Both result types live in `black_box_optimizer.results`; Pareto
+  algorithms remain in `black_box_optimizer.pareto`. Invalid proposals launch
+  no worker and enter fatal finalization.
 - Active ownership: Codex owns controller integration on
   `work/2026-08-01-1947-controller-repair`; Mel reviews the controller and
   result contracts. The approved initialization direction is recorded in
@@ -150,8 +152,9 @@ the next person can resume without reconstructing recent decisions.
 - Verification: All 201 tests pass under Python 3.13.14. Python 3.13 has NumPy
   2.5.1 and CPU-only PyTorch 2.13.0 installed while unqualified `python` and
   `pip` remain on the intended AppData Python 3.11 installation. The hygiene
-  checker passes across 37 source files with one line-length advisory in
-  `tests/test_persistence.py`.
+  checker passes across 41 source files with one line-length advisory in
+  `tests/test_persistence.py`. Matplotlib 3.11.1 is installed for the approved
+  Reporter plot work, and `pip check` reports no broken requirements.
 - Next work: Implement persistence final outputs and the separate Reporter,
   then replace the controller's finalization placeholder. Cancellation, bounded
   diagnostics, trial-local streams, CLI composition, and end-to-end verification

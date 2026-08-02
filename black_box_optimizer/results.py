@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Literal
 
 from black_box_optimizer.models import OptimizationContract
-from black_box_optimizer.pareto import ParetoFront, build_pareto_front
 from black_box_optimizer.records import TrialRecord
 from black_box_optimizer.stop_policy import TerminationReason
 
@@ -26,6 +25,28 @@ _VALID_RESULT_STATUSES = (
     "failed",
 )
 _NORMAL_TERMINATION_REASONS = ("maximum_trials", "search_exhausted")
+
+
+@dataclass(frozen=True, slots=True)
+class ParetoFront:
+    """Immutable, history-ordered non-dominated trial records."""
+
+    records: tuple[TrialRecord, ...]
+
+    def __post_init__(self) -> None:
+        records = tuple(self.records)
+        if not all(isinstance(record, TrialRecord) for record in records):
+            raise TypeError("records must contain only TrialRecord values")
+        trial_ids = tuple(record.trial_id for record in records)
+        if len(set(trial_ids)) != len(trial_ids):
+            raise ValueError("ParetoFront cannot contain duplicate trial IDs")
+        object.__setattr__(self, "records", records)
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def __iter__(self):
+        return iter(self.records)
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +126,8 @@ def build_optimization_result(
     termination_reason: TerminationReason,
 ) -> OptimizationResult:
     """Derive the Pareto front and final status from authoritative evidence."""
+    from black_box_optimizer.pareto import build_pareto_front
+
     history_snapshot = tuple(history)
     pareto_front = build_pareto_front(history_snapshot, contract)
 

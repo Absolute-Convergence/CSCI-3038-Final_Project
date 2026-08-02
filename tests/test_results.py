@@ -12,10 +12,10 @@ from black_box_optimizer.models import (
     ParameterDefinition,
     ParameterKind,
 )
-from black_box_optimizer.pareto import ParetoFront
 from black_box_optimizer.records import TrialRecord
 from black_box_optimizer.results import (
     OptimizationResult,
+    ParetoFront,
     build_optimization_result,
 )
 

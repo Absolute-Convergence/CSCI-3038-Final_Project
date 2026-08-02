@@ -4,32 +4,10 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
 
 from black_box_optimizer.models import Direction, OptimizationContract
 from black_box_optimizer.records import TrialRecord
-
-
-@dataclass(frozen=True, slots=True)
-class ParetoFront:
-    """Immutable, history-ordered non-dominated trial records."""
-
-    records: tuple[TrialRecord, ...]
-
-    def __post_init__(self) -> None:
-        records = tuple(self.records)
-        if not all(isinstance(record, TrialRecord) for record in records):
-            raise TypeError("records must contain only TrialRecord values")
-        trial_ids = tuple(record.trial_id for record in records)
-        if len(set(trial_ids)) != len(trial_ids):
-            raise ValueError("ParetoFront cannot contain duplicate trial IDs")
-        object.__setattr__(self, "records", records)
-
-    def __len__(self) -> int:
-        return len(self.records)
-
-    def __iter__(self):
-        return iter(self.records)
+from black_box_optimizer.results import ParetoFront
 
 
 def is_eligible(

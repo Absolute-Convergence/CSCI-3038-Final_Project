@@ -57,5 +57,9 @@ The controller integration also uses these approved policies:
   back on the application layer.
 - Result and reporting contracts remain immutable and are subject to Mel's
   review before the controller/result work is accepted.
+- Matplotlib is approved when reporting implementation begins. Reporter uses
+  its noninteractive renderer and the first two declared objectives for the
+  default explanatory plot; the dependency is not used by worker execution,
+  search, Pareto evaluation, or the Iris worker.
 - This record explains the TDS direction change without a broad rewrite of the
   governance documents.
