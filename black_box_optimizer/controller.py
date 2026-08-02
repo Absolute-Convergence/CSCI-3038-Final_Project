@@ -1,24 +1,9 @@
-"""
-controller.py
+"""Deterministic lifecycle control for one sequential optimization run.
 
-The Controller! This is the deterministic finite-state lifecycle
-governor from TDS section 5. It owns state transitions and makes sure
-only one worker is ever authorized at a time.
-
-It doesn't know nuthin about optimization itself. The search algorithm
-proposes candidates, StopPolicy decides when to stop, runner.execute()
-launches the worker, and build_trial_record() turns the result into a
-TrialRecord. The controller just coordinates everybody else.
-
-It also expects already-built configuration objects and an
-already-created RunDirectory. Loading JSON and the rest of the setup
-happen before the controller is ever constructed.
-
-Keep an eye out (!!!) for the KNOWN DEVIATION and KNOWN GAP notes
-throughout the file. They point out the omitted INITIALIZING state,
-checkpoint failure handling, mid-worker cancellation, and the
-unfinished FINALIZING step while the project waits on pareto.py,
-results.py, reporting.py, and their associated stuffs.
+Application composition finishes before this controller is constructed. The
+controller coordinates search, stopping, worker execution, evidence recording,
+checkpointing, result construction, and Reporter delegation without owning the
+implementation of those collaborators.
 """
 
 from __future__ import annotations
@@ -39,6 +24,11 @@ from black_box_optimizer.models import (
 )
 from black_box_optimizer.persistence import CheckpointError, RunDirectory
 from black_box_optimizer.records import TrialRecord, build_trial_record
+from black_box_optimizer.reporting import ReportingError, ResultReporter
+from black_box_optimizer.results import (
+    OptimizationResult,
+    build_optimization_result,
+)
 from black_box_optimizer.search.base import SearchAlgorithm
 from black_box_optimizer.stop_policy import (
     StopPolicyEvaluator,
@@ -64,12 +54,9 @@ class ControllerState(StrEnum):
     STOPPED = "stopped"
 
 
-# KNOWN GAP
-# EXECUTING may still have a living child process
-# RECORDING has a finished worker but may be halfway through committing
-# the completed trial to history
-# An interrupt in either state is raised again because neither can be
-# honestly treated as a clean prelaunch cancellation yet
+# Runner owns interrupts while a child is active and returns a cancelled
+# observation. If that private contract is violated, or interruption lands
+# during evidence persistence, the controller must not fabricate completion.
 _UNSAFE_TO_CANCEL_STATES = (
     ControllerState.EXECUTING,
     ControllerState.RECORDING,
@@ -86,12 +73,14 @@ class ApplicationController:
         stop_policy: StopPolicyEvaluator,
         worker_spec: WorkerSpec,
         run_directory: RunDirectory,
+        reporter: ResultReporter,
     ) -> None:
         self._contract = contract
         self._algorithm = algorithm
         self._stop_policy = stop_policy
         self._worker_spec = worker_spec
         self._run_directory = run_directory
+        self._reporter = reporter
 
         self._history = TrialHistory()
         self._next_trial_id = 0
@@ -99,23 +88,19 @@ class ApplicationController:
         # The application layer completes initialization before construction.
         self.state: ControllerState = ControllerState.SELECTING
         self.termination_reason: TerminationReason | None = None
+        self.result: OptimizationResult | None = None
+        self._reported = False
 
     @property
     def history(self) -> tuple[TrialRecord, ...]:
         """A read-only snapshot of every trial recorded so far."""
         return self._history.snapshot()
 
-    def run(self) -> None:
+    def run(self) -> OptimizationResult:
         """
         Run the state machine until the optimization is finished.
 
-        KNOWN GAP!!! FINALIZING currently raises NotImplementedError
-        because Pareto evaluation and reporting are not implemented yet.
-        By the time that happens, state, termination_reason, and history
-        are already correct and available for inspection.
-
-        Once _finalize() is implemented, run() will continue into
-        STOPPED and return normally.
+        Return the authoritative immutable result after final reporting.
         """
         candidate: CandidateConfiguration | None = None
         metrics_path: Path | None = None
@@ -168,10 +153,6 @@ class ApplicationController:
                         self._next_trial_id
                     )
 
-                    # KNOWN GAP
-                    # runner.execute uses a blocking subprocess call so this
-                    # controller cannot safely terminate and record a cancelled
-                    # child process if Ctrl C lands during execution
                     execution_result = runner.execute(
                         self._worker_spec, candidate, metrics_path
                     )
@@ -199,6 +180,9 @@ class ApplicationController:
                     )
                     self._history.append(record)
                     self._next_trial_id += 1
+                    was_cancelled = record.execution_status == "cancelled"
+                    stdout = execution_result.get("stdout", "")
+                    stderr = execution_result.get("stderr", "")
 
                     # Cleared so a future bug cannot silently reuse stale
                     # trial data from the previous worker
@@ -207,6 +191,11 @@ class ApplicationController:
                     execution_result = None
 
                     try:
+                        self._run_directory.write_diagnostics(
+                            record.trial_id,
+                            stdout,
+                            stderr,
+                        )
                         self._run_directory.checkpoint(
                             self._history.snapshot(), self._contract
                         )
@@ -219,7 +208,11 @@ class ApplicationController:
                         self.state = ControllerState.FAILED
                         continue
 
-                    self.state = ControllerState.EVALUATING
+                    if was_cancelled:
+                        self.termination_reason = "user_cancelled"
+                        self.state = ControllerState.FINALIZING
+                    else:
+                        self.state = ControllerState.EVALUATING
 
                 elif self.state is ControllerState.EVALUATING:
                     decision = self._stop_policy.after_trial(
@@ -241,13 +234,12 @@ class ApplicationController:
 
                 elif self.state is ControllerState.FINALIZING:
                     self._finalize()
-
-                    # Unreachable until the known FINALIZING gap is filled
-                    # pragma: no cover
                     self.state = ControllerState.STOPPED
 
                 elif self.state is ControllerState.STOPPED:
-                    return
+                    if self.result is None:
+                        raise RuntimeError("STOPPED reached without a result")
+                    return self.result
 
                 else:
                     # Every ControllerState should have an explicit branch
@@ -257,34 +249,46 @@ class ApplicationController:
                     )
 
         except KeyboardInterrupt:
-            # KNOWN GAP
-            # Prelaunch cancellation is safe to finalize normally
-            # Midworker or midrecording cancellation is raised again because
-            # the controller cannot guarantee a clean child shutdown or commit
+            # Prelaunch cancellation is safe to finalize normally. Runner owns
+            # child shutdown; RECORDING may be inside an evidence commit.
             if self.state in _UNSAFE_TO_CANCEL_STATES:
                 raise
 
             self.termination_reason = "user_cancelled"
             self.state = ControllerState.FINALIZING
             self._finalize()
-
-            # Unreachable until the known FINALIZING gap is filled
-            # pragma: no cover
             self.state = ControllerState.STOPPED
+            if self.result is None:
+                raise RuntimeError("STOPPED reached without a result")
+            return self.result
 
     def _finalize(self) -> None:
-        """
-        Derive the ParetoFront, build an OptimizationResult, and hand it
-        to a Reporter.
+        """Build and report the authoritative result exactly once."""
+        if self._reported:
+            return
+        if self.termination_reason is None:
+            raise RuntimeError("FINALIZING requires a termination reason")
 
-        KNOWN GAP!!! pareto.py does not have the full Pareto sweep yet,
-        and results.py and reporting.py do not exist. This method stays
-        as an explicit seam until those pieces are ready.
-        """
-        raise NotImplementedError(
-            "FINALIZING requires pareto.py (ParetoFront/OptimizationResult) "
-            "and reporting.py (Reporter.write()), neither of which exist "
-            f"yet. Reached FINALIZING with termination_reason="
-            f"{self.termination_reason!r} and "
-            f"{len(self._history.snapshot())} recorded trial(s)."
-        )
+        if (
+            self.result is None
+            or self.result.termination_reason != self.termination_reason
+        ):
+            self.result = build_optimization_result(
+                self._history.snapshot(),
+                self._contract,
+                self.termination_reason,
+            )
+
+        try:
+            self._reporter.write(self.result)
+        except ReportingError:
+            self.termination_reason = "fatal_error"
+            self.result = build_optimization_result(
+                self._history.snapshot(),
+                self._contract,
+                self.termination_reason,
+            )
+            self.state = ControllerState.FAILED
+            raise
+
+        self._reported = True

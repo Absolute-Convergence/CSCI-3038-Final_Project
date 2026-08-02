@@ -2,21 +2,20 @@
 
 CSCI 3038 final project by The Snek People.
 
-Black Box Optimizer is a local Python 3.13.14 application under development for
+Black Box Optimizer is a local Python 3.13.14 application for
 tuning an external worker program without importing or inspecting that
 worker's internal code. It sends candidate parameters through command-line
 flags, receives one row of numerical metrics through a trial-specific CSV
-file, and will return the complete non-dominated Pareto Front across multiple
-objectives when the remaining MVP composition work is complete.
+file, and returns the complete non-dominated Pareto Front across multiple
+objectives.
 
-`main` currently implements immutable configuration and candidate models, the
-validated JSON loader, seeded RandomSearch, synchronous worker execution,
-metrics parsing, immutable trial records, append-only history, maximum-trial
-stop decisions, the Application Controller's core lifecycle loop, partial
-persistence, Pareto eligibility, and an external PyTorch Iris worker. Full
-Pareto evaluation, final results, reporting, controller finalization, and the
-command-line entry point remain incomplete, so the repository does not yet
-provide a runnable optimizer.
+The implemented MVP includes immutable configuration and candidate models,
+validated JSON loading, declared-domain proposal validation, seeded
+RandomSearch, synchronous cancellable worker execution, immutable trial
+records, append-only history, lifecycle control, atomic persistence, complete
+mixed-direction Pareto evaluation, immutable results, reporting, and a module
+command-line entry point. The external PyTorch Iris worker remains outside the
+optimizer package.
 
 See [docs/architecture-baseline.md](docs/architecture-baseline.md) for the
 controlling foundation contracts and MVP boundaries.
@@ -33,7 +32,7 @@ conflicts with merged code or a recorded human decision. Public-contract
 differences must still be reconciled through change control; implementation
 drift recorded in scratch notes does not silently amend a controlled contract.
 
-## Target MVP Runtime Flow
+## MVP Runtime Flow
 
 ```text
 JSON project configuration
@@ -76,32 +75,33 @@ weighted winner.
 
 ## Project Structure and Status
 
-Items marked `implemented` exist now. Other modules show the intended
-responsibility boundaries and will be added in later, approved changes.
+Items marked `implemented` exist in the completed implementation stack. The GUI
+remains an optional, independent presentation layer.
 
 ```text
 CSCI-3038-Final_Project/
 |-- AGENTS.md                         # repository rules and scratch memory
 |-- KNOWN_ISSUES.md                   # reproduced defects in merged code
 |-- README.md                         # project overview and development map
-|-- requirements.txt                 # current NumPy and example-worker deps
+|-- requirements.txt                 # optimizer, reporting, and example deps
 |-- source_hygiene.json               # global source-file hygiene settings
 |-- black_box_optimizer/
 |   |-- __init__.py                   # implemented public model exports
-|   |-- __main__.py                   # planned module entry point
-|   |-- cli.py                        # planned CLI composition
+|   |-- __main__.py                   # implemented module entry point
+|   |-- cli.py                        # implemented CLI composition
+|   |-- application.py                # implemented initialization/composition
 |   |-- models.py                     # implemented immutable foundation types
 |   |-- config_loader.py              # implemented JSON parsing and validation
-|   |-- controller.py                 # implemented (partial); FINALIZING is an open seam
-|   |-- runner.py                     # implemented synchronous subprocess boundary
+|   |-- controller.py                 # implemented lifecycle governor
+|   |-- runner.py                     # implemented Popen subprocess boundary
 |   |-- metrics.py                    # implemented one-row CSV parser
 |   |-- records.py                    # implemented TrialRecord construction
 |   |-- history.py                    # implemented append-only TrialHistory
-|   |-- persistence.py                # implemented (partial); run dir + history checkpoints only
+|   |-- persistence.py                # implemented history + trial artifacts
 |   |-- stop_policy.py                # implemented maximum-trial decisions
-|   |-- pareto.py                     # implemented (partial); is_eligible() only
-|   |-- results.py                    # planned ParetoFront/OptimizationResult
-|   |-- reporting.py                  # planned result export boundary
+|   |-- pareto.py                     # implemented eligibility/dominance/sweep
+|   |-- results.py                    # implemented immutable result contracts
+|   |-- reporting.py                  # implemented result export boundary
 |   `-- search/
 |       |-- base.py                   # implemented search protocol/results
 |       |-- registry.py               # implemented built-in algorithm registry
@@ -126,14 +126,17 @@ CSCI-3038-Final_Project/
 |   |-- test_worker.py                # implemented Iris worker tests
 |   |-- test_check_monoliths.py       # implemented hygiene-checker tests
 |   |-- test_controller.py            # implemented ApplicationController tests
-|   |-- test_pareto.py                # implemented is_eligible() tests
+|   |-- test_pareto.py                # implemented full Pareto tests
 |   |-- test_persistence.py           # implemented RunDirectory tests
+|   |-- test_application.py           # implemented composition tests
+|   |-- test_cli.py                   # implemented CLI status tests
 |   |-- unit/                         # planned focused unit tests
 |   |-- integration/
 |   |   |-- test_one_trial_slice.py   # implemented module-level slice
-|   |   `-- test_full_pipeline_real_worker.py
-|   |                                   # implemented real subprocess slice
-|   `-- fixtures/                     # planned workers, CSVs, and Pareto cases
+|   |   |-- test_full_pipeline_real_worker.py
+|   |   |-- test_application_real_worker.py
+|   |   `-- test_cli_acceptance.py    # implemented real application slices
+|   `-- fixtures/                     # implemented purpose-built workers
 |-- docs/
 |   |-- architecture-baseline.md      # implemented controlling baseline
 |   |-- planning_baseline_v01/        # preserved historical planning baseline
@@ -157,9 +160,10 @@ optimizer package.
 | Runner | CLI construction, timeout, and process observations | Search or objective interpretation |
 | Record factory | Metrics parsing and immutable trial evidence | History mutation beyond one append request |
 | Trial history | Ordered append-only records and tuple snapshots | Ranking, deletion, or rewriting evidence |
-| Persistence | Run/per-trial directories and atomic history.csv checkpoints | Ranking, evaluating, or interpreting metrics |
-| Pareto evaluator | Eligibility (implemented), dominance and full front (planned) | Weighted scoring or worker execution |
-| Reporting/GUI | Presentation of authoritative results | Optimizer state or universal-winner selection |
+| Persistence | Run/trial directories, diagnostics, and atomic history checkpoints | Ranking, evaluating, or interpreting metrics |
+| Pareto evaluator | Eligibility, mixed-direction dominance, and complete front | Weighted scoring or worker execution |
+| Reporter | Authoritative exports and explanatory visualization | Optimizer state or universal-winner selection |
+| GUI | Optional presentation of authoritative results | Required optimizer logic or result mutation |
 
 The intended dependency direction is inward toward immutable contracts. The
 Runner will not import search or Pareto code; RandomSearch will not import the
@@ -185,6 +189,8 @@ The `black_box_optimizer` package root currently exports:
 - `StopPolicy`
 - `ProjectConfiguration`
 - `CandidateConfiguration`
+- `ParetoFront`
+- `OptimizationResult`
 - `ConfigurationError`
 - `load_configuration`
 
@@ -201,11 +207,34 @@ Additional implemented surfaces are imported from their owning modules:
 - `black_box_optimizer.controller.ApplicationController`
 - `black_box_optimizer.pareto.is_eligible`
 - `black_box_optimizer.persistence.RunDirectory` and `create_run_directory`
+- `black_box_optimizer.reporting.Reporter`
+- `black_box_optimizer.application.initialize_application`
 - `black_box_optimizer.search.base.ProposalResult` and `SearchAlgorithm`
 - `black_box_optimizer.search.registry.create_algorithm`
 - `black_box_optimizer.search.random_search.RandomSearch`
 
 See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for reproduced defects in merged code.
+
+## Run the Optimizer
+
+Install dependencies and invoke the module with a project configuration:
+
+```powershell
+py -3.13 -m pip install -r requirements.txt
+py -3.13 -m black_box_optimizer `
+  examples\iris_torch\iris_config.json `
+  --output-dir runs
+```
+
+Each invocation creates a unique `run_*` directory. It contains the resolved
+configuration, atomically checkpointed `history.csv`, one directory per trial,
+the complete Pareto CSV, a text summary, and a PNG showing the first two
+declared objectives. Every recorded trial directory contains `stdout.txt` and
+`stderr.txt`; `metrics.csv` exists only when the worker produced it.
+
+Normal completion and a no-eligible-trials result exit with code 0. Fatal
+failure exits with code 1, invalid initialization/configuration exits with code
+2, and user cancellation exits with code 130.
 
 ## MVP Boundaries
 
@@ -249,8 +278,8 @@ timestamped working branches.
 ## Development Verification
 
 Install the current dependencies into the same Python 3.13 interpreter used to
-run the tests. NumPy supports seeded RandomSearch, while PyTorch belongs only to
-the external Iris example and its tests:
+run the tests. NumPy supports seeded RandomSearch, Matplotlib supports Reporter
+plots, and PyTorch belongs only to the external Iris example and its tests:
 
 ```powershell
 py -3.13 -m pip install -r requirements.txt
@@ -268,14 +297,7 @@ Run the repository-wide source hygiene check:
 py -3.13 tools\check_monoliths.py
 ```
 
-At the 2026-08-01 documentation checkpoint, all 176 tests pass under the
-course-required Python 3.13.14 interpreter. The source-hygiene check passes
-across 37 source files with one line-length advisory in
-`tests/test_persistence.py`.
-
-The application does not yet have a runnable optimizer entry point. The next
-composition boundary is repairing the merged controller, including separate
-application initialization, declared-domain candidate validation, and durable
-persistence-error behavior. Full Pareto evaluation, result construction,
-reporting, cancellation-aware execution, diagnostics, and CLI composition
-follow that repair.
+At the current implementation checkpoint, all 229 tests pass under the
+course-required Python 3.13.14 interpreter. The suite includes a real
+controller-to-Iris run and an end-to-end module CLI test. The source-hygiene
+check passes across 51 source files without advisories.

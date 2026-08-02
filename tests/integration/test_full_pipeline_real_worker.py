@@ -231,14 +231,10 @@ class FullPipelineRealWorkerTests(unittest.TestCase):
         self.assertEqual(record.execution_status, "process_failed")
         self.assertNotEqual(record.exit_code, 0)
         self.assertFalse(record.timed_out)
-        # NOTE: runner.execute() captures stdout/stderr from the crashed
-        # process (subprocess.run(..., capture_output=True)) but never
-        # surfaces it in the returned dict, so error_message stays None
-        # here even though the real subprocess printed a traceback. This
-        # was confirmed empirically, not assumed -- flagged for the team
-        # since it means a process_failed trial currently carries no clue
-        # as to why it failed beyond a bare exit code.
-        self.assertIsNone(record.error_message)
+        self.assertIsNotNone(record.error_message)
+        self.assertLessEqual(len(record.error_message), 1_000)
+        self.assertIn("batch_size", record.error_message)
+        self.assertIn("Traceback", execution_result["stderr"])
         self.assertEqual(record.metrics_status, "missing")
         self.assertFalse(metrics_path.exists())
 

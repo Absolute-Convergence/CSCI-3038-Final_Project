@@ -16,6 +16,7 @@ from black_box_optimizer.models import (
     StopPolicy,
     WorkerSpec,
 )
+from black_box_optimizer.results import OptimizationResult, ParetoFront
 
 __all__ = [
     "AlgorithmSpec",
@@ -24,8 +25,10 @@ __all__ = [
     "Direction",
     "Objective",
     "OptimizationContract",
+    "OptimizationResult",
     "ParameterDefinition",
     "ParameterKind",
+    "ParetoFront",
     "ProjectConfiguration",
     "StopPolicy",
     "WorkerSpec",
