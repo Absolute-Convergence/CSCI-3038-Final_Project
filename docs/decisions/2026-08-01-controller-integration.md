@@ -61,5 +61,10 @@ The controller integration also uses these approved policies:
   its noninteractive renderer and the first two declared objectives for the
   default explanatory plot; the dependency is not used by worker execution,
   search, Pareto evaluation, or the Iris worker.
+- The initial CLI contract is
+  `python -m black_box_optimizer CONFIG [--output-dir DIRECTORY]`, with `runs`
+  as the default output base. Exit codes are 0 for normal/no-eligible results,
+  1 for fatal run or reporting failure, 2 for invalid initialization or
+  configuration, and 130 for user cancellation.
 - This record explains the TDS direction change without a broad rewrite of the
   governance documents.

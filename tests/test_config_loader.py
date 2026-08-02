@@ -135,8 +135,12 @@ class ConfigurationLoaderTests(unittest.TestCase):
             ("learning_rate", "hidden_size", "epochs", "batch_size"),
         )
         self.assertEqual(
-            configuration.worker.command[1],
-            str((path.parent / "worker.py").resolve()),
+            configuration.worker.command,
+            (
+                "py",
+                "-3.13",
+                str((path.parent / "worker.py").resolve()),
+            ),
         )
 
     def test_reports_invalid_json_with_location(self) -> None:
