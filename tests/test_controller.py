@@ -1,24 +1,4 @@
-"""
-Focused tests for ApplicationController, following the TDS section 5
-state machine.
-
-An important note!!!! runner.execute() is mocked because there’s no good
-reason to launch an actual subprocess JUST to test controller behavior.
-This keeps the tests fast and lets each transition be forced on purpose.
-The other collaborators use their real implementations, and a separate
-integration test covers the full runner and worker subprocess path.
-
-Keep an eye out (!!!) for notes about checkpoint failure, finite search
-exhaustion, mid-worker cancellation, and the unfinished FINALIZING
-seam.
-
-MAINTENANCE NOTE!!!! Until _finalize() is implemented, completed runs
-raise NotImplementedError and remain in FINALIZING. Once the Pareto and
-reporting pieces exist, those assertRaises blocks should become normal
-controller.run() calls and the expected state should become STOPPED.
-
-The finalization error-message test can also be deleted then. Hooray!
-"""
+"""Focused lifecycle and finalization tests for ApplicationController."""
 
 from __future__ import annotations
 
@@ -46,6 +26,7 @@ from black_box_optimizer.persistence import (
     CheckpointError,
     create_run_directory,
 )
+from black_box_optimizer.reporting import ReportingError
 from black_box_optimizer.search.base import ProposalResult, SearchAlgorithm
 from black_box_optimizer.search.registry import create_algorithm
 from black_box_optimizer.stop_policy import StopDecision, StopPolicyEvaluator
@@ -112,6 +93,19 @@ class _InvalidCandidateSearch:
         )
 
 
+class _RecordingReporter:
+    def __init__(self) -> None:
+        self.results = []
+
+    def write(self, result) -> None:
+        self.results.append(result)
+
+
+class _FailingReporter:
+    def write(self, result) -> None:
+        raise ReportingError("report failed")
+
+
 class _InterruptedBeforeLaunchSearch:
     """Simulates Ctrl+C arriving while the controller is still selecting."""
 
@@ -169,6 +163,7 @@ class ControllerHappyPathTests(unittest.TestCase):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmpdir.cleanup)
         self.run_directory = create_run_directory(self._tmpdir.name)
+        self.reporter = _RecordingReporter()
 
     def test_reaches_finalizing_with_maximum_trials(self) -> None:
         contract = make_contract()
@@ -182,20 +177,20 @@ class ControllerHappyPathTests(unittest.TestCase):
             stop_policy,
             make_worker_spec(),
             self.run_directory,
+            self.reporter,
         )
 
         with patch(
             "black_box_optimizer.runner.execute",
             side_effect=_fake_completed_execute(),
         ):
-            # KNOWN GAP
-            # FINALIZING still raises until Pareto and reporting exist
-            with self.assertRaises(NotImplementedError):
-                controller.run()
+            result = controller.run()
 
-        self.assertEqual(controller.state, ControllerState.FINALIZING)
+        self.assertEqual(controller.state, ControllerState.STOPPED)
         self.assertEqual(controller.termination_reason, "maximum_trials")
         self.assertEqual(len(controller.history), 2)
+        self.assertIs(result, controller.result)
+        self.assertEqual(result.status, "completed")
 
         for expected_id, record in enumerate(controller.history):
             self.assertEqual(record.trial_id, expected_id)
@@ -216,6 +211,7 @@ class ControllerHappyPathTests(unittest.TestCase):
             stop_policy,
             make_worker_spec(),
             self.run_directory,
+            self.reporter,
         )
 
         seen_paths: list[Path] = []
@@ -223,8 +219,7 @@ class ControllerHappyPathTests(unittest.TestCase):
             "black_box_optimizer.runner.execute",
             side_effect=_fake_completed_execute(metrics_by_path=seen_paths),
         ):
-            with self.assertRaises(NotImplementedError):
-                controller.run()
+            controller.run()
 
         self.assertEqual(len(seen_paths), 3)
         self.assertEqual(len(set(seen_paths)), 3)
@@ -243,6 +238,7 @@ class ControllerHappyPathTests(unittest.TestCase):
             stop_policy,
             make_worker_spec(),
             self.run_directory,
+            self.reporter,
         )
 
         def _failing_execute(worker_spec, candidate, metrics_path):
@@ -259,13 +255,13 @@ class ControllerHappyPathTests(unittest.TestCase):
         with patch(
             "black_box_optimizer.runner.execute", side_effect=_failing_execute
         ):
-            with self.assertRaises(NotImplementedError):
-                controller.run()
+            result = controller.run()
 
         self.assertEqual(len(controller.history), 1)
         record = controller.history[0]
         self.assertEqual(record.execution_status, "process_failed")
         self.assertEqual(record.metrics_status, "missing")
+        self.assertEqual(result.status, "no_eligible_trials")
 
 
 class ControllerTerminationReasonTests(unittest.TestCase):
@@ -275,6 +271,7 @@ class ControllerTerminationReasonTests(unittest.TestCase):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmpdir.cleanup)
         self.run_directory = create_run_directory(self._tmpdir.name)
+        self.reporter = _RecordingReporter()
 
     def test_search_exhausted_after_one_real_trial(self) -> None:
         # This domain has exactly one possible candidate and no FLOAT
@@ -290,17 +287,18 @@ class ControllerTerminationReasonTests(unittest.TestCase):
             stop_policy,
             make_worker_spec(),
             self.run_directory,
+            self.reporter,
         )
 
         with patch(
             "black_box_optimizer.runner.execute",
             side_effect=_fake_completed_execute(),
         ):
-            with self.assertRaises(NotImplementedError):
-                controller.run()
+            result = controller.run()
 
         self.assertEqual(controller.termination_reason, "search_exhausted")
         self.assertEqual(len(controller.history), 1)
+        self.assertEqual(result.status, "completed")
 
     def test_checkpoint_failure_finalizes_with_fatal_error(self) -> None:
         # TDS section 10 3 says checkpoint failure is fatal but the record
@@ -317,6 +315,7 @@ class ControllerTerminationReasonTests(unittest.TestCase):
             stop_policy,
             make_worker_spec(),
             self.run_directory,
+            self.reporter,
         )
 
         with patch(
@@ -327,11 +326,11 @@ class ControllerTerminationReasonTests(unittest.TestCase):
                 "black_box_optimizer.controller.RunDirectory.checkpoint",
                 side_effect=CheckpointError("disk full"),
             ):
-                with self.assertRaises(NotImplementedError):
-                    controller.run()
+                result = controller.run()
 
-        self.assertEqual(controller.state, ControllerState.FINALIZING)
+        self.assertEqual(controller.state, ControllerState.STOPPED)
         self.assertEqual(controller.termination_reason, "fatal_error")
+        self.assertEqual(result.status, "failed")
 
         # The record is appended before checkpointing so the failed disk
         # write should not erase the real in memory history
@@ -346,13 +345,14 @@ class ControllerTerminationReasonTests(unittest.TestCase):
             stop_policy,
             make_worker_spec(),
             self.run_directory,
+            self.reporter,
         )
 
-        with self.assertRaises(NotImplementedError):
-            controller.run()
+        result = controller.run()
 
         self.assertEqual(controller.termination_reason, "fatal_error")
         self.assertEqual(len(controller.history), 0)
+        self.assertEqual(result.status, "failed")
 
     def test_gating_stop_finalizes_before_any_execution(self) -> None:
         contract = make_contract()
@@ -365,15 +365,16 @@ class ControllerTerminationReasonTests(unittest.TestCase):
             _AlwaysStoppingPolicy(),
             make_worker_spec(),
             self.run_directory,
+            self.reporter,
         )
 
         with patch("black_box_optimizer.runner.execute") as fake_execute:
-            with self.assertRaises(NotImplementedError):
-                controller.run()
+            result = controller.run()
             fake_execute.assert_not_called()
 
         self.assertEqual(controller.termination_reason, "maximum_trials")
         self.assertEqual(len(controller.history), 0)
+        self.assertEqual(result.status, "no_eligible_trials")
 
     def test_invalid_candidate_is_fatal_and_never_launched(self) -> None:
         controller = ApplicationController(
@@ -382,16 +383,17 @@ class ControllerTerminationReasonTests(unittest.TestCase):
             StopPolicyEvaluator(StopPolicy(max_trials=5)),
             make_worker_spec(),
             self.run_directory,
+            self.reporter,
         )
 
         with patch("black_box_optimizer.runner.execute") as fake_execute:
-            with self.assertRaises(NotImplementedError):
-                controller.run()
+            result = controller.run()
 
         fake_execute.assert_not_called()
         self.assertEqual(controller.termination_reason, "fatal_error")
-        self.assertEqual(controller.state, ControllerState.FINALIZING)
+        self.assertEqual(controller.state, ControllerState.STOPPED)
         self.assertEqual(controller.history, ())
+        self.assertEqual(result.status, "failed")
 
     def test_pre_launch_interrupt_becomes_user_cancelled(self) -> None:
         contract = make_contract()
@@ -402,16 +404,58 @@ class ControllerTerminationReasonTests(unittest.TestCase):
             stop_policy,
             make_worker_spec(),
             self.run_directory,
+            self.reporter,
         )
 
-        with self.assertRaises(NotImplementedError):
-            controller.run()
+        result = controller.run()
 
         self.assertEqual(controller.termination_reason, "user_cancelled")
-        self.assertEqual(controller.state, ControllerState.FINALIZING)
+        self.assertEqual(controller.state, ControllerState.STOPPED)
         self.assertEqual(len(controller.history), 0)
+        self.assertEqual(result.status, "cancelled")
 
-    def test_interrupt_during_execution_is_not_swallowed(self) -> None:
+    def test_runner_cancellation_records_attempt_and_diagnostics(self) -> None:
+        contract = make_contract()
+        controller = ApplicationController(
+            contract,
+            create_algorithm(AlgorithmSpec(name="random_search", seed=9)),
+            StopPolicyEvaluator(StopPolicy(max_trials=5)),
+            make_worker_spec(),
+            self.run_directory,
+            self.reporter,
+        )
+        cancelled_observation = {
+            "runtime_seconds": 0.2,
+            "exit_code": -15,
+            "timed_out": False,
+            "execution_status": "cancelled",
+            "error_message": "Worker cancelled by user",
+            "stdout": "partial output",
+            "stderr": "shutdown detail",
+        }
+
+        with patch(
+            "black_box_optimizer.runner.execute",
+            return_value=cancelled_observation,
+        ):
+            result = controller.run()
+
+        self.assertEqual(controller.state, ControllerState.STOPPED)
+        self.assertEqual(controller.termination_reason, "user_cancelled")
+        self.assertEqual(result.status, "cancelled")
+        self.assertEqual(len(result.history), 1)
+        self.assertEqual(result.history[0].execution_status, "cancelled")
+        trial_directory = self.run_directory.trial_directory(0)
+        self.assertEqual(
+            (trial_directory / "stdout.txt").read_text(encoding="utf-8"),
+            "partial output",
+        )
+        self.assertEqual(
+            (trial_directory / "stderr.txt").read_text(encoding="utf-8"),
+            "shutdown detail",
+        )
+
+    def test_unexpected_runner_interrupt_is_not_swallowed(self) -> None:
         contract = make_contract()
         algorithm = create_algorithm(
             AlgorithmSpec(name="random_search", seed=7)
@@ -423,6 +467,7 @@ class ControllerTerminationReasonTests(unittest.TestCase):
             stop_policy,
             make_worker_spec(),
             self.run_directory,
+            self.reporter,
         )
 
         def _interrupted_execute(worker_spec, candidate, metrics_path):
@@ -432,9 +477,8 @@ class ControllerTerminationReasonTests(unittest.TestCase):
             "black_box_optimizer.runner.execute",
             side_effect=_interrupted_execute,
         ):
-            # KNOWN GAP
-            # The controller cannot safely kill the blocked child yet so the
-            # interrupt must stay loud instead of becoming user_cancelled
+            # Runner owns child shutdown and normally returns a cancelled
+            # observation. A runner that violates that boundary stays loud.
             with self.assertRaises(KeyboardInterrupt):
                 controller.run()
 
@@ -442,15 +486,16 @@ class ControllerTerminationReasonTests(unittest.TestCase):
         self.assertEqual(len(controller.history), 0)
 
 
-class ControllerFinalizeSeamTests(unittest.TestCase):
-    """Tests for the intentional unfinished Pareto and reporting seam."""
+class ControllerFinalizeTests(unittest.TestCase):
+    """Finalization builds one authoritative result and delegates reporting."""
 
     def setUp(self) -> None:
         self._tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmpdir.cleanup)
         self.run_directory = create_run_directory(self._tmpdir.name)
+        self.reporter = _RecordingReporter()
 
-    def test_finalize_error_message_names_the_missing_pieces(self) -> None:
+    def test_finalization_is_idempotent_and_reports_exact_result(self) -> None:
         contract = make_contract()
         stop_policy = StopPolicyEvaluator(StopPolicy(max_trials=5))
         controller = ApplicationController(
@@ -459,12 +504,33 @@ class ControllerFinalizeSeamTests(unittest.TestCase):
             stop_policy,
             make_worker_spec(),
             self.run_directory,
+            self.reporter,
         )
 
-        # MAINTENANCE NOTE
-        # Delete this test once _finalize is actually implemented
-        with self.assertRaisesRegex(NotImplementedError, "pareto.py"):
+        result = controller.run()
+        repeated = controller.run()
+
+        self.assertIs(repeated, result)
+        self.assertEqual(self.reporter.results, [result])
+        self.assertEqual(controller.state, ControllerState.STOPPED)
+
+    def test_reporting_failure_is_fatal_and_retains_result(self) -> None:
+        controller = ApplicationController(
+            make_contract(),
+            _AlwaysFailingSearch(),
+            StopPolicyEvaluator(StopPolicy(max_trials=5)),
+            make_worker_spec(),
+            self.run_directory,
+            _FailingReporter(),
+        )
+
+        with self.assertRaisesRegex(ReportingError, "report failed"):
             controller.run()
+
+        self.assertEqual(controller.state, ControllerState.FAILED)
+        self.assertEqual(controller.termination_reason, "fatal_error")
+        self.assertIsNotNone(controller.result)
+        self.assertEqual(controller.result.status, "failed")
 
 
 if __name__ == "__main__":

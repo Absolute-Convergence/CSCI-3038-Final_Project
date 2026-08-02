@@ -123,17 +123,30 @@ Keep this section brief and current. Update it after every repository change so
 the next person can resume without reconstructing recent decisions.
 
 - Last updated: 2026-08-01
-- Current state: `main` now includes the partial `ApplicationController`, run
-  directories and atomic history checkpoints, Pareto eligibility, and the
-  previously implemented configuration, search, runner, records, history,
-  stop-policy, and real Iris worker boundaries. Controller finalization, full
-  Pareto evaluation, immutable results, reporting, and CLI composition remain
-  incomplete. The repair branch now validates proposed candidates against the
-  declared domain before launch and normalizes valid mappings into contract
-  order. Invalid proposals launch no worker and enter fatal finalization.
-- Active ownership: Codex owns controller integration on
-  `work/2026-08-01-1947-controller-repair`; Mel reviews the controller and
-  result contracts. The approved initialization direction is recorded in
+- Current state: The integrated MVP includes configuration,
+  declared-domain candidate validation, search, synchronous cancellable runner,
+  immutable records/results, append-only history, atomic persistence, the full
+  controller lifecycle, Reporter outputs, separate application composition,
+  the module CLI, and the real Iris worker. It builds the complete
+  history-ordered `ParetoFront`. Both result types live in
+  `black_box_optimizer.results`; Pareto algorithms remain in
+  `black_box_optimizer.pareto`. Invalid proposals launch no worker and enter
+  fatal finalization. The separate `Reporter` writes the resolved JSON shape,
+  deterministic Pareto CSV, text summary, and a
+  noninteractive plot of the first two declared objectives. Controller
+  finalization now builds and returns the authoritative result, delegates it to
+  Reporter exactly once, and reaches `STOPPED` after successful output. The
+  runner now uses synchronous `Popen`, terminates then kills after a two-second
+  grace period when required, returns bounded last-line diagnostics, and makes
+  complete decoded streams available for trial-local persistence. A cancelled
+  worker produces exactly one cancelled record and a cancelled result. The
+  separate application layer composes initialization and writes resolved config
+  before trial 1; `python -m black_box_optimizer` is now runnable. The example
+  Iris configuration explicitly launches its worker through `py -3.13`.
+- Integration record: Mel reviewed and merged PRs #12 through #15. Because
+  PRs #13 through #15 retained their stacked branch bases, a final
+  main-targeted integration merge was required to land their already-reviewed
+  trees on `main`. The approved initialization direction is recorded in
   `docs/decisions/2026-08-01-controller-integration.md`.
 - Decisions: Mel authorized Codex to own the remaining controller integration,
   with Mel as controller and result-contract reviewer. Initialization is a
@@ -146,12 +159,12 @@ the next person can resume without reconstructing recent decisions.
   two-second grace period, and bounded 1,000-character last-line diagnostics
   are approved. Continue timestamped branches, checkpoint commits, non-squash
   merges, verified tags, and merged-branch cleanup.
-- Verification: All 184 tests pass under Python 3.13.14. Python 3.13 has NumPy
+- Verification: All 229 tests pass under Python 3.13.14. Python 3.13 has NumPy
   2.5.1 and CPU-only PyTorch 2.13.0 installed while unqualified `python` and
   `pip` remain on the intended AppData Python 3.11 installation. The hygiene
-  checker passes across 37 source files with one line-length advisory in
-  `tests/test_persistence.py`.
-- Next work: Implement full Pareto evaluation and immutable result contracts,
-  then replace the controller's finalization placeholder. Reporter exports,
-  cancellation, bounded diagnostics, trial-local streams, CLI composition, and
-  end-to-end verification follow.
+  checker passes across 51 source files without advisories. Matplotlib 3.11.1
+  is installed for the approved Reporter plot work, and `pip check` reports no
+  broken requirements.
+- Next work: No MVP implementation work remains after the verified integration
+  checkpoint. Preserve the architectural baseline and use formal change
+  control for any later public-contract or scope change.

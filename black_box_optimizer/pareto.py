@@ -1,39 +1,20 @@
-"""
-pareto.py
-
-Multi-objective eligibility and Pareto evaluation.
-
-Right now this file only implements is_eligible(). It's dinky,
-completely self-contained, and the TDS basically hands over the logic as
-pseudocode, so I just implemented it directly instead of getting fancy.
-
-Keep an eye out (!!!) for the KNOWN GAP note below. The rest of the
-Pareto implementation is intentionally left unfinished while the project
-waits on the full ParetoFront sweep.
-
-Also!! Mel, when you finish this I only wrote the tests for
-is_eligible(), so test_pareto.py will need some love too :)
-"""
+"""Mixed-direction Pareto eligibility, dominance, and front evaluation."""
 
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
-from black_box_optimizer.models import OptimizationContract
+from black_box_optimizer.models import Direction, OptimizationContract
 from black_box_optimizer.records import TrialRecord
+from black_box_optimizer.results import ParetoFront
 
 
 def is_eligible(
-    record: TrialRecord, contract: OptimizationContract
+    record: TrialRecord,
+    contract: OptimizationContract,
 ) -> bool:
-    """
-    Whether one TrialRecord is eligible for Pareto consideration.
-
-    Requires a successfully executed trial with valid metrics that
-    include every declared objective, all as finite values. Extra
-    metrics are totally fine. They just don't matter for Pareto
-    eligibility.
-    """
+    """Return whether a record has every fact needed for Pareto evaluation."""
     if not record.execution_succeeded:
         return False
     if record.metrics_status != "valid":
@@ -46,8 +27,47 @@ def is_eligible(
     )
 
 
-# KNOWN GAP
-# The dominance comparison and full ParetoFront sweep from TDS section 8
-# are intentionally left unimplemented
-# controller.py FINALIZING is waiting on these pieces before it can build
-# the OptimizationResult and finish reporting
+def dominates(
+    left: TrialRecord,
+    right: TrialRecord,
+    contract: OptimizationContract,
+) -> bool:
+    """Return whether left is no worse everywhere and better somewhere."""
+    if not is_eligible(left, contract) or not is_eligible(right, contract):
+        return False
+
+    strictly_better = False
+    for objective in contract.objectives:
+        left_value = left.metrics[objective.metric_name]
+        right_value = right.metrics[objective.metric_name]
+
+        if objective.direction is Direction.MINIMIZE:
+            if left_value > right_value:
+                return False
+            strictly_better = strictly_better or left_value < right_value
+        else:
+            if left_value < right_value:
+                return False
+            strictly_better = strictly_better or left_value > right_value
+
+    return strictly_better
+
+
+def build_pareto_front(
+    records: Sequence[TrialRecord],
+    contract: OptimizationContract,
+) -> ParetoFront:
+    """Return every eligible record not dominated by another eligible record."""
+    eligible = tuple(
+        record for record in records if is_eligible(record, contract)
+    )
+    non_dominated = tuple(
+        candidate
+        for candidate in eligible
+        if not any(
+            challenger is not candidate
+            and dominates(challenger, candidate, contract)
+            for challenger in eligible
+        )
+    )
+    return ParetoFront(records=non_dominated)
