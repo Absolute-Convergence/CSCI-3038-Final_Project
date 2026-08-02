@@ -226,7 +226,7 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual(rows[0]["metric.loss"], "")
         self.assertEqual(rows[1]["metric.loss"], "0.2")
 
-    def test_error_message_none_is_an_empty_cell_not_the_string_none(self) -> None:
+    def test_none_error_message_is_an_empty_cell(self) -> None:
         record = make_record(0, metrics={"accuracy": 0.9, "loss": 0.1})
 
         self.run_directory.checkpoint([record], self.contract)

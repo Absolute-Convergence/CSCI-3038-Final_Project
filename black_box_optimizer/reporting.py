@@ -8,6 +8,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Protocol
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
@@ -23,6 +24,13 @@ from black_box_optimizer.results import OptimizationResult
 
 class ReportingError(RuntimeError):
     """Raised when a required report artifact cannot be completed."""
+
+
+class ResultReporter(Protocol):
+    """Reporting shape consumed by the lifecycle controller."""
+
+    def write(self, result: OptimizationResult) -> None:
+        ...
 
 
 class Reporter:
