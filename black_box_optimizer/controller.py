@@ -27,6 +27,10 @@ from enum import StrEnum
 from pathlib import Path
 
 from black_box_optimizer import runner
+from black_box_optimizer.candidate_validation import (
+    CandidateValidationError,
+    validate_candidate,
+)
 from black_box_optimizer.history import TrialHistory
 from black_box_optimizer.models import (
     CandidateConfiguration,
@@ -46,9 +50,8 @@ class ControllerState(StrEnum):
     """
     States used by the controller lifecycle.
 
-    KNOWN DEVIATION!!! The TDS also includes INITIALIZING, but all of
-    that setup happens before ApplicationController is constructed.
-    This state machine therefore begins at SELECTING.
+    Initialization is an approved, separate application-composition concern.
+    This lifecycle state machine therefore begins at SELECTING.
     """
 
     SELECTING = "selecting"
@@ -93,9 +96,7 @@ class ApplicationController:
         self._history = TrialHistory()
         self._next_trial_id = 0
 
-        # KNOWN DEVIATION
-        # The caller already handled the TDS INITIALIZING work so the
-        # controller starts directly at SELECTING
+        # The application layer completes initialization before construction.
         self.state: ControllerState = ControllerState.SELECTING
         self.termination_reason: TerminationReason | None = None
 
@@ -127,8 +128,16 @@ class ApplicationController:
                         self._contract, self._history.snapshot()
                     )
                     if proposal.status == "candidate":
-                        candidate = proposal.candidate
-                        self.state = ControllerState.GATING
+                        try:
+                            candidate = validate_candidate(
+                                proposal.candidate,
+                                self._contract,
+                            )
+                        except CandidateValidationError:
+                            self.termination_reason = "fatal_error"
+                            self.state = ControllerState.FAILED
+                        else:
+                            self.state = ControllerState.GATING
                     elif proposal.status == "search_exhausted":
                         self.termination_reason = "search_exhausted"
                         self.state = ControllerState.FINALIZING
