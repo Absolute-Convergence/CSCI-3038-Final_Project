@@ -123,7 +123,7 @@ Keep this section brief and current. Update it after every repository change so
 the next person can resume without reconstructing recent decisions.
 
 - Last updated: 2026-08-01
-- Current state: The active implementation stack includes configuration,
+- Current state: The integrated MVP includes configuration,
   declared-domain candidate validation, search, synchronous cancellable runner,
   immutable records/results, append-only history, atomic persistence, the full
   controller lifecycle, Reporter outputs, separate application composition,
@@ -143,9 +143,10 @@ the next person can resume without reconstructing recent decisions.
   separate application layer composes initialization and writes resolved config
   before trial 1; `python -m black_box_optimizer` is now runnable. The example
   Iris configuration explicitly launches its worker through `py -3.13`.
-- Active ownership: Codex owns controller integration on
-  `work/2026-08-01-1947-controller-repair`; Mel reviews the controller and
-  result contracts. The approved initialization direction is recorded in
+- Integration record: Mel reviewed and merged PRs #12 through #15. Because
+  PRs #13 through #15 retained their stacked branch bases, a final
+  main-targeted integration merge was required to land their already-reviewed
+  trees on `main`. The approved initialization direction is recorded in
   `docs/decisions/2026-08-01-controller-integration.md`.
 - Decisions: Mel authorized Codex to own the remaining controller integration,
   with Mel as controller and result-contract reviewer. Initialization is a
@@ -164,7 +165,6 @@ the next person can resume without reconstructing recent decisions.
   checker passes across 51 source files without advisories. Matplotlib 3.11.1
   is installed for the approved Reporter plot work, and `pip check` reports no
   broken requirements.
-- Next work: Mel reviews the completed stack in ready-for-review PRs #12, #13,
-  #14, and #15, in that order. After approval, merge without squashing in the
-  same order, tag each verified checkpoint, resolve the runner issue entry,
-  and clean up the merged branches.
+- Next work: No MVP implementation work remains after the verified integration
+  checkpoint. Preserve the architectural baseline and use formal change
+  control for any later public-contract or scope change.
