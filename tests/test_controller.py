@@ -33,6 +33,7 @@ from black_box_optimizer.controller import (
 )
 from black_box_optimizer.models import (
     AlgorithmSpec,
+    CandidateConfiguration,
     Direction,
     Objective,
     OptimizationContract,
@@ -97,6 +98,18 @@ class _AlwaysFailingSearch:
 
     def propose(self, contract, history):
         return ProposalResult(status="proposal_failed", reason="stalled")
+
+
+class _InvalidCandidateSearch:
+    """Proposes a candidate outside the declared parameter domain."""
+
+    def propose(self, contract, history):
+        return ProposalResult(
+            status="candidate",
+            candidate=CandidateConfiguration(
+                parameters={"learning_rate": 5.0, "batch_size": 8}
+            ),
+        )
 
 
 class _InterruptedBeforeLaunchSearch:
@@ -361,6 +374,24 @@ class ControllerTerminationReasonTests(unittest.TestCase):
 
         self.assertEqual(controller.termination_reason, "maximum_trials")
         self.assertEqual(len(controller.history), 0)
+
+    def test_invalid_candidate_is_fatal_and_never_launched(self) -> None:
+        controller = ApplicationController(
+            make_contract(),
+            _InvalidCandidateSearch(),
+            StopPolicyEvaluator(StopPolicy(max_trials=5)),
+            make_worker_spec(),
+            self.run_directory,
+        )
+
+        with patch("black_box_optimizer.runner.execute") as fake_execute:
+            with self.assertRaises(NotImplementedError):
+                controller.run()
+
+        fake_execute.assert_not_called()
+        self.assertEqual(controller.termination_reason, "fatal_error")
+        self.assertEqual(controller.state, ControllerState.FINALIZING)
+        self.assertEqual(controller.history, ())
 
     def test_pre_launch_interrupt_becomes_user_cancelled(self) -> None:
         contract = make_contract()
