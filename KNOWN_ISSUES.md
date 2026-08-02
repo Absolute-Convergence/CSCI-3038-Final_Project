@@ -12,12 +12,24 @@ Confirmed, reproduced bugs in merged code -- not a wishlist.
 the worker printed a real traceback. Reproduced by running the Iris
 worker with `batch_size=0` (a real `DataLoader` crash): exit code 1,
 `error_message` still `None`. Covered by
-`tests/integration/test_full_pipeline_real_worker.py::test_real_worker_crash_flows_through_as_process_failed`.
+`tests/integration/test_full_pipeline_real_worker.py`, in
+`test_real_worker_crash_flows_through_as_process_failed`.
 
-Fix: capture `process.stderr` into `error_message` on that branch, same
-as `launch_failed`/`timed_out` already do.
-(`runner.py`). Double check with group since `error_message` contents may be a
-change controlled contract detail!
+The integration test currently asserts `None` to preserve and expose the
+reproduced behavior; it must be updated when the defect is fixed.
+
+Required remediation:
+
+- Put a bounded, human-readable immediate cause in `error_message` for a
+  nonzero exit.
+- Preserve full captured stdout/stderr in trial-local diagnostic files when
+  the run-directory boundary is available.
+- Do not copy unbounded worker stderr into `history.csv`; the TDS requires
+  bounded history diagnostics and trial-local storage for full output.
+
+The exact summary, truncation, and redaction rules affect a controlled
+diagnostic contract and require human agreement before implementation. The
+existence of a useful bounded cause is already required by TDS section 10.4.
 
 Same root cause has a second consequence: TDS section 10.4 wants full
 stdout/stderr preserved in trial-local files (`stdout.txt`/`stderr.txt`

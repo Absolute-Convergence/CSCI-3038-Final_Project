@@ -2,19 +2,21 @@
 
 CSCI 3038 final project by The Snek People.
 
-Black Box Optimizer is a planned local Python 3.13.14 application for tuning an
-external worker program without importing or inspecting that worker's internal
-code. It will send candidate parameters through command-line flags, receive one
-row of numerical metrics through a trial-specific CSV file, and return the
-complete non-dominated Pareto Front across multiple objectives.
+Black Box Optimizer is a local Python 3.13.14 application under development for
+tuning an external worker program without importing or inspecting that
+worker's internal code. It sends candidate parameters through command-line
+flags, receives one row of numerical metrics through a trial-specific CSV
+file, and will return the complete non-dominated Pareto Front across multiple
+objectives when the remaining MVP composition work is complete.
 
-The repository now has immutable configuration and candidate models, a
-validated JSON configuration loader, seeded RandomSearch, synchronous worker
-execution, trial history, and the Application Controller's core lifecycle
-loop. Pareto eligibility (`is_eligible()`) and persistence (run directories,
-history checkpoints) are implemented in part; the ParetoFront sweep, final
-result construction, reporting, and the optional GUI have not been
-implemented.
+`main` currently implements immutable configuration and candidate models, the
+validated JSON loader, seeded RandomSearch, synchronous worker execution,
+metrics parsing, immutable trial records, append-only history, maximum-trial
+stop decisions, the Application Controller's core lifecycle loop, partial
+persistence, Pareto eligibility, and an external PyTorch Iris worker. Full
+Pareto evaluation, final results, reporting, controller finalization, and the
+command-line entry point remain incomplete, so the repository does not yet
+provide a runnable optimizer.
 
 See [docs/architecture-baseline.md](docs/architecture-baseline.md) for the
 controlling foundation contracts and MVP boundaries.
@@ -25,7 +27,13 @@ team ratification and technical approval. Draft v0.1 is preserved unchanged in
 [`docs/planning_baseline_v01`](docs/planning_baseline_v01) as the historical
 source baseline.
 
-## Planned Runtime Flow
+Repository decisions and operating guidance in [AGENTS.md](AGENTS.md), together
+with the approved architecture baseline, control when the draft planning set
+conflicts with merged code or a recorded human decision. Public-contract
+differences must still be reconciled through change control; implementation
+drift recorded in scratch notes does not silently amend a controlled contract.
+
+## Target MVP Runtime Flow
 
 ```text
 JSON project configuration
@@ -66,7 +74,7 @@ will run at a time. Reporting and GUI code will consume optimizer results but
 must not select candidates, change history, or replace the Pareto Front with a
 weighted winner.
 
-## Rough Planned File Structure
+## Project Structure and Status
 
 Items marked `implemented` exist now. Other modules show the intended
 responsibility boundaries and will be added in later, approved changes.
@@ -74,9 +82,10 @@ responsibility boundaries and will be added in later, approved changes.
 ```text
 CSCI-3038-Final_Project/
 |-- AGENTS.md                         # repository rules and scratch memory
+|-- KNOWN_ISSUES.md                   # reproduced defects in merged code
 |-- README.md                         # project overview and development map
+|-- requirements.txt                 # current NumPy and example-worker deps
 |-- source_hygiene.json               # global source-file hygiene settings
-|-- KNOWN_ISSUES.md                   # confirmed, reproduced bugs in merged code
 |-- black_box_optimizer/
 |   |-- __init__.py                   # implemented public model exports
 |   |-- __main__.py                   # planned module entry point
@@ -120,7 +129,10 @@ CSCI-3038-Final_Project/
 |   |-- test_pareto.py                # implemented is_eligible() tests
 |   |-- test_persistence.py           # implemented RunDirectory tests
 |   |-- unit/                         # planned focused unit tests
-|   |-- integration/                  # real end-to-end chain tests implemented
+|   |-- integration/
+|   |   |-- test_one_trial_slice.py   # implemented module-level slice
+|   |   `-- test_full_pipeline_real_worker.py
+|   |                                   # implemented real subprocess slice
 |   `-- fixtures/                     # planned workers, CSVs, and Pareto cases
 |-- docs/
 |   |-- architecture-baseline.md      # implemented controlling baseline
@@ -153,7 +165,7 @@ The intended dependency direction is inward toward immutable contracts. The
 Runner will not import search or Pareto code; RandomSearch will not import the
 Runner; and the optimizer package will never import the example worker.
 
-## Configuration and Foundation Types Available Now
+## Implemented Public Surfaces
 
 `load_configuration(path)` reads one UTF-8 JSON project file, validates its
 complete structure before any trial can run, resolves relative worker script
@@ -161,7 +173,7 @@ or executable paths from the configuration file's directory, and returns an
 immutable `ProjectConfiguration`. Invalid input raises `ConfigurationError`
 with one or more location-aware issues.
 
-The `black_box_optimizer` package currently exports:
+The `black_box_optimizer` package root currently exports:
 
 - `ParameterKind`
 - `ParameterDefinition`
@@ -178,6 +190,22 @@ The `black_box_optimizer` package currently exports:
 
 These are frozen dataclasses or string enums. Ordered collections use tuples,
 and candidate mappings are defensively copied into read-only views.
+
+Additional implemented surfaces are imported from their owning modules:
+
+- `black_box_optimizer.metrics.read_trial_metrics`
+- `black_box_optimizer.records.TrialRecord` and `build_trial_record`
+- `black_box_optimizer.history.TrialHistory`
+- `black_box_optimizer.stop_policy.StopDecision` and `StopPolicyEvaluator`
+- `black_box_optimizer.runner.execute`
+- `black_box_optimizer.controller.ApplicationController`
+- `black_box_optimizer.pareto.is_eligible`
+- `black_box_optimizer.persistence.RunDirectory` and `create_run_directory`
+- `black_box_optimizer.search.base.ProposalResult` and `SearchAlgorithm`
+- `black_box_optimizer.search.registry.create_algorithm`
+- `black_box_optimizer.search.random_search.RandomSearch`
+
+See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for reproduced defects in merged code.
 
 ## MVP Boundaries
 
@@ -220,9 +248,9 @@ timestamped working branches.
 
 ## Development Verification
 
-Install dependencies: NumPy is required as of `search/random_search.py`
-(seeded sampling per TDS §7.2), and PyTorch is required as of
-`examples/iris_torch/worker.py` (the example classifier):
+Install the current dependencies into the same Python 3.13 interpreter used to
+run the tests. NumPy supports seeded RandomSearch, while PyTorch belongs only to
+the external Iris example and its tests:
 
 ```powershell
 py -3.13 -m pip install -r requirements.txt
@@ -240,6 +268,14 @@ Run the repository-wide source hygiene check:
 py -3.13 tools\check_monoliths.py
 ```
 
+At the 2026-08-01 documentation checkpoint, all 176 tests pass under the
+course-required Python 3.13.14 interpreter. The source-hygiene check passes
+across 37 source files with one line-length advisory in
+`tests/test_persistence.py`.
+
 The application does not yet have a runnable optimizer entry point. The next
-core implementation boundary is the one-trial candidate-to-record vertical
-slice. This README should be updated as planned modules become real.
+composition boundary is repairing the merged controller, including separate
+application initialization, declared-domain candidate validation, and durable
+persistence-error behavior. Full Pareto evaluation, result construction,
+reporting, cancellation-aware execution, diagnostics, and CLI composition
+follow that repair.
