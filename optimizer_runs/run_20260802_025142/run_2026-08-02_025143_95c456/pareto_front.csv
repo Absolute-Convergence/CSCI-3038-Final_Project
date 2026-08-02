@@ -1,0 +1,1 @@
+trial_id,param.learning_rate,param.hidden_size,metric.validation_accuracy,metric.validation_loss

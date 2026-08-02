@@ -2,7 +2,7 @@
   "worker": {
     "command": [
       "python",
-      "examples/iris_torch/worker.py"
+      "C:\\dev\\final_proj\\CSCI-3038-Final_Project\\examples\\iris_torch\\worker.py"
     ],
     "metrics_argument": "--metrics-out",
     "timeout_seconds": 120.0

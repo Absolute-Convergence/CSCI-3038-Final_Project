@@ -111,7 +111,7 @@ class ConfigApp:
         
         ttk.Label(frame, text="Command (comma separated):").grid(row=0, column=0, sticky="w")
         self.cmd_entry = ttk.Entry(frame, width=40)
-        self.cmd_entry.insert(0, "python, worker.py")
+        self.cmd_entry.insert(0, "python, examples/iris_torch/worker.py")
         self.cmd_entry.grid(row=0, column=1, pady=2)
         
         ttk.Label(frame, text="Metrics Argument:").grid(row=1, column=0, sticky="w")
@@ -256,45 +256,6 @@ class ConfigApp:
         self.go_btn = ttk.Button(actions_frame, text="Do the thing", command=self.run_loop)
         self.go_btn.pack(side="bottom", expand=True, fill="x", padx=2)
 
-    # builds and returns the json 
-
-    # def build_config_dict(self):
-    #     cmd = [c.strip() for c in self.cmd_entry.get().split(",")]
-    #     timeout = float(self.timeout_entry.get())
-        
-    #     params_out = []
-    #     for p in self.parameters:
-    #         p_type = p["kind"].get()
-    #         p_name = p["name"].get()
-    #         if not p_name: continue
-            
-    #         p_dict = {"name": p_name, "kind": p_type}
-    #         if p_type == "categorical":
-    #             choices = [c.strip() for c in p["min"].get().split(",")]
-    #             p_dict["choices"] = [float(x) if '.' in x else int(x) if x.isdigit() else x for x in choices]
-    #         else:
-    #             p_dict["minimum"] = float(p["min"].get()) if p_type == "float" else int(p["min"].get())
-    #             p_dict["maximum"] = float(p["max"].get()) if p_type == "float" else int(p["max"].get())
-    #         params_out.append(p_dict)
-            
-    #     objs_out = []
-    #     for o in self.objectives:
-    #         o_name = o["name"].get()
-    #         if not o_name: continue
-    #         objs_out.append({"metric_name": o_name, "direction": o["direction"].get()})
-    #         return {
-    #             "worker": 
-    #             {"command": cmd,
-    #              "metrics_argument": self.metrics_entry.get(),
-    #              "timeout_seconds": timeout},
-    #              "optimization": {
-    #                  "parameters": params_out,
-    #                  "objectives": objs_out},
-    #                  "algorithm": {
-    #                      "name": self.algo_entry.get(),
-    #                      "seed": int(self.seed_entry.get())},
-    #                      "stop_policy": {
-    #                          "max_trials": int(self.max_trials_entry.get())}}
         
     def build_config_dict(self):
         """Build the optimizer configuration dictionary."""
@@ -441,7 +402,7 @@ class ConfigApp:
                 base_dir = Path(__file__).parent
 
             # Ensure folders exist
-            config_dir = base_dir / "saved_configs"
+            config_dir = base_dir
             output_root = base_dir / "optimizer_runs"
 
             config_dir.mkdir(exist_ok=True)

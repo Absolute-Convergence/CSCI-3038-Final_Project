@@ -2,7 +2,7 @@
   "worker": {
     "command": [
       "python",
-      "examples/iris_torch/worker.py"
+      "C:\\dev\\final_proj\\CSCI-3038-Final_Project\\saved_configs\\worker.py"
     ],
     "metrics_argument": "--metrics-out",
     "timeout_seconds": 120.0
@@ -20,6 +20,21 @@
         "kind": "integer",
         "minimum": 4,
         "maximum": 128
+      },
+      {
+        "name": "epochs",
+        "kind": "integer",
+        "minimum": 5,
+        "maximum": 100
+      },
+      {
+        "name": "batch_size",
+        "kind": "categorical",
+        "choices": [
+          8,
+          16,
+          32
+        ]
       }
     ],
     "objectives": [
@@ -29,6 +44,10 @@
       },
       {
         "metric_name": "validation_loss",
+        "direction": "minimize"
+      },
+      {
+        "metric_name": "training_time_seconds",
         "direction": "minimize"
       }
     ]
