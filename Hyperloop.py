@@ -1,27 +1,46 @@
 
-#==========================================================
-# HYPERLOOP
-# 
-#==========================================================
-# Todo list 
-#-------------
-# finish run_loop()
-#   needs to create the json, creates a thread and calls the optimizer using subprocess 
-#   json file will be placed into a file and added as an argument when running the optimizer 
-#   
-# Create function to alert user the optimizer has finished running.
-# Create function to retrieve the results and display for the user. 
-# 
-# Wish List
-#------------
-# make the json preview more user friendly 
-#   move save file button to the preview window 
-#   run_loop will call the save_file function so no seperate button on the main is needed. 
-# Make it pretty
-# 
-# Future Development Plans
-#---------------------------
-# create an excutable file
+# =============================================================================
+# HyperLoop
+# =============================================================================
+#
+# Graphical Configuration Tool for the Black Box Optimizer
+#
+# HyperLoop provides a Tkinter-based interface for creating, validating, and
+# launching optimization runs without manually editing JSON configuration files.
+# The application builds a valid optimizer configuration, saves it to disk,
+# and launches the optimizer using its public Python API.
+#
+# Features
+# --------
+# - Configure worker commands and execution settings.
+# - Define optimization parameters (float, integer, categorical).
+# - Configure single or multi-objective optimization problems.
+# - Select optimization algorithm and stopping criteria.
+# - Preview generated JSON configuration.
+# - Save configuration files for future use.
+# - Launch optimization runs directly from the GUI.
+#
+# Architecture
+# ------------
+# HyperLoop is intentionally a thin front-end over the optimizer library.
+# All optimization logic remains inside the black_box_optimizer package.
+# This application is responsible only for:
+#
+#   1. Collecting user input
+#   2. Building a valid configuration
+#   3. Saving the configuration
+#   4. Launching the optimizer
+#   5. Displaying run status and results
+#
+# Future Enhancements
+# -------------------
+# - Integrated results viewer
+# - Improved JSON preview with save options
+# - Progress reporting during optimization
+# - Run history management
+# - Standalone executable distribution
+#
+# =============================================================================
 
 import tkinter as tk
 from tkinter import ttk, messagebox
