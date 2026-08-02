@@ -1,0 +1,8 @@
+status: completed
+termination_reason: maximum_trials
+attempted_trials: 20
+successful_trials: 20
+valid_metrics_trials: 20
+pareto_trials: 8
+objectives: validation_accuracy (maximize), validation_loss (minimize), training_time_seconds (minimize)
+pareto_front: complete non-dominated set; no weighted winner

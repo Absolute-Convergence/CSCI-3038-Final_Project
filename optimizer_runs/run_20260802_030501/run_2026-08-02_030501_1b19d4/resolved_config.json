@@ -1,0 +1,43 @@
+{
+  "worker": {
+    "command": [
+      "python",
+      "C:\\dev\\final_proj\\CSCI-3038-Final_Project\\examples\\iris_torch\\worker.py"
+    ],
+    "metrics_argument": "--metrics-out",
+    "timeout_seconds": 120.0
+  },
+  "optimization": {
+    "parameters": [
+      {
+        "name": "learning_rate",
+        "kind": "float",
+        "minimum": 0.0001,
+        "maximum": 0.1
+      },
+      {
+        "name": "hidden_size",
+        "kind": "integer",
+        "minimum": 4,
+        "maximum": 128
+      }
+    ],
+    "objectives": [
+      {
+        "metric_name": "validation_accuracy",
+        "direction": "maximize"
+      },
+      {
+        "metric_name": "validation_loss",
+        "direction": "minimize"
+      }
+    ]
+  },
+  "algorithm": {
+    "name": "random_search",
+    "seed": 42
+  },
+  "stop_policy": {
+    "max_trials": 20
+  }
+}
