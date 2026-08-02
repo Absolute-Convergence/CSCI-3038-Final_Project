@@ -1,19 +1,4 @@
-"""
-persistence.py
-
-This file owns one optimization run's on-disk layout. Its job is
-keeping track of the run directory, handing out the correct per-trial
-paths, and writing atomic history checkpoints, following TDS section 9.
-
-Right now RunDirectory only owns the parts that are actually unblocked.
-The finalization outputs and resolved_config.json are still waiting on
-other pieces of the project.
-
-Keep an eye out (!!!) for the KNOWN GAP and KNOWN DEVIATION notes
-throughout the file. They cover the missing finalization files,
-stdout/stderr preservation, bounded error messages, trial directory
-numbering, and deterministic metric column ordering.
-"""
+"""Run-directory layout and atomic persistence of trial evidence."""
 
 from __future__ import annotations
 
@@ -34,7 +19,7 @@ _TRIAL_DIRECTORY_DIGITS = 4
 
 class CheckpointError(RuntimeError):
     """
-    Raised when history.csv cannot be atomically replaced.
+    Raised when required run evidence cannot be atomically persisted.
 
     TDS section 10.3 treats this as fatal, but the in-memory TrialRecord
     appended before the checkpoint attempt is not lost. Callers should
@@ -87,6 +72,25 @@ class RunDirectory:
         exist.
         """
         return self.trial_directory(trial_id) / "metrics.csv"
+
+    def write_diagnostics(
+        self,
+        trial_id: int,
+        stdout: str,
+        stderr: str,
+    ) -> None:
+        """Persist complete decoded worker streams in the trial directory."""
+        if not isinstance(stdout, str) or not isinstance(stderr, str):
+            raise TypeError("stdout and stderr must be strings")
+        directory = self.trial_directory(trial_id)
+        try:
+            _atomic_write_text(directory / "stdout.txt", stdout)
+            _atomic_write_text(directory / "stderr.txt", stderr)
+        except OSError as error:
+            raise CheckpointError(
+                f"Failed to persist diagnostics for trial_id {trial_id}: "
+                f"{error}"
+            ) from error
 
     def checkpoint(
         self,
@@ -207,15 +211,7 @@ def _flatten_record(
     contract: OptimizationContract,
     fieldnames: Sequence[str],
 ) -> dict[str, object]:
-    """
-    Flatten one TrialRecord into a history.csv row.
-
-    KNOWN GAP!!! TDS section 10.4 says unbounded worker output must never
-    be dumped into history.csv. error_message is currently either None
-    or a short runner message, so writing it directly is safe for now.
-    Once real stderr can flow into error_message, it must be bounded
-    before reaching this function.
-    """
+    """Flatten one record with only its bounded diagnostic summary."""
     row: dict[str, object] = {
         "trial_id": record.trial_id,
         "execution_status": record.execution_status,
@@ -242,14 +238,16 @@ def _flatten_record(
     return row
 
 
-# KNOWN GAP
-# TDS sections 9 1 and 10 4 expect captured stdout and stderr to be
-# preserved in each trial directory
-# runner.py captures them but does not return them yet so RunDirectory
-# has nothing available to write
-
-# KNOWN GAP
-# pareto_front.csv and summary.txt need OptimizationResult and the full
-# ParetoFront sweep which do not exist yet
-# resolved_config.json also needs a serializer because config_loader.py
-# currently only reads project configuration
+def _atomic_write_text(destination: Path, content: str) -> None:
+    fd, temporary_name = tempfile.mkstemp(
+        dir=destination.parent,
+        prefix=f"{destination.name}.",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
+            stream.write(content)
+        os.replace(temporary_name, destination)
+    except OSError:
+        Path(temporary_name).unlink(missing_ok=True)
+        raise

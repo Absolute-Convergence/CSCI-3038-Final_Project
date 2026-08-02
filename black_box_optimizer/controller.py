@@ -156,10 +156,6 @@ class ApplicationController:
                         self._next_trial_id
                     )
 
-                    # KNOWN GAP
-                    # runner.execute uses a blocking subprocess call so this
-                    # controller cannot safely terminate and record a cancelled
-                    # child process if Ctrl C lands during execution
                     execution_result = runner.execute(
                         self._worker_spec, candidate, metrics_path
                     )
@@ -187,6 +183,9 @@ class ApplicationController:
                     )
                     self._history.append(record)
                     self._next_trial_id += 1
+                    was_cancelled = record.execution_status == "cancelled"
+                    stdout = execution_result.get("stdout", "")
+                    stderr = execution_result.get("stderr", "")
 
                     # Cleared so a future bug cannot silently reuse stale
                     # trial data from the previous worker
@@ -195,6 +194,11 @@ class ApplicationController:
                     execution_result = None
 
                     try:
+                        self._run_directory.write_diagnostics(
+                            record.trial_id,
+                            stdout,
+                            stderr,
+                        )
                         self._run_directory.checkpoint(
                             self._history.snapshot(), self._contract
                         )
@@ -207,7 +211,11 @@ class ApplicationController:
                         self.state = ControllerState.FAILED
                         continue
 
-                    self.state = ControllerState.EVALUATING
+                    if was_cancelled:
+                        self.termination_reason = "user_cancelled"
+                        self.state = ControllerState.FINALIZING
+                    else:
+                        self.state = ControllerState.EVALUATING
 
                 elif self.state is ControllerState.EVALUATING:
                     decision = self._stop_policy.after_trial(

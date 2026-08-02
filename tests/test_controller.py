@@ -414,6 +414,47 @@ class ControllerTerminationReasonTests(unittest.TestCase):
         self.assertEqual(len(controller.history), 0)
         self.assertEqual(result.status, "cancelled")
 
+    def test_runner_cancellation_records_attempt_and_diagnostics(self) -> None:
+        contract = make_contract()
+        controller = ApplicationController(
+            contract,
+            create_algorithm(AlgorithmSpec(name="random_search", seed=9)),
+            StopPolicyEvaluator(StopPolicy(max_trials=5)),
+            make_worker_spec(),
+            self.run_directory,
+            self.reporter,
+        )
+        cancelled_observation = {
+            "runtime_seconds": 0.2,
+            "exit_code": -15,
+            "timed_out": False,
+            "execution_status": "cancelled",
+            "error_message": "Worker cancelled by user",
+            "stdout": "partial output",
+            "stderr": "shutdown detail",
+        }
+
+        with patch(
+            "black_box_optimizer.runner.execute",
+            return_value=cancelled_observation,
+        ):
+            result = controller.run()
+
+        self.assertEqual(controller.state, ControllerState.STOPPED)
+        self.assertEqual(controller.termination_reason, "user_cancelled")
+        self.assertEqual(result.status, "cancelled")
+        self.assertEqual(len(result.history), 1)
+        self.assertEqual(result.history[0].execution_status, "cancelled")
+        trial_directory = self.run_directory.trial_directory(0)
+        self.assertEqual(
+            (trial_directory / "stdout.txt").read_text(encoding="utf-8"),
+            "partial output",
+        )
+        self.assertEqual(
+            (trial_directory / "stderr.txt").read_text(encoding="utf-8"),
+            "shutdown detail",
+        )
+
     def test_interrupt_during_execution_is_not_swallowed(self) -> None:
         contract = make_contract()
         algorithm = create_algorithm(

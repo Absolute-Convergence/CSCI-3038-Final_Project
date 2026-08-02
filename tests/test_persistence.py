@@ -155,6 +155,48 @@ class TrialPathTests(unittest.TestCase):
         self.assertFalse(path.exists())
 
 
+class DiagnosticPersistenceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.run_directory = RunDirectory(Path(self._tmpdir.name) / "run")
+
+    def test_complete_streams_are_written_as_utf8(self) -> None:
+        self.run_directory.write_diagnostics(
+            2,
+            "full résultat\n",
+            "traceback\n原因\n",
+        )
+
+        directory = self.run_directory.trial_directory(2)
+        self.assertEqual(
+            (directory / "stdout.txt").read_text(encoding="utf-8"),
+            "full résultat\n",
+        )
+        self.assertEqual(
+            (directory / "stderr.txt").read_text(encoding="utf-8"),
+            "traceback\n原因\n",
+        )
+
+    def test_empty_streams_create_empty_files(self) -> None:
+        self.run_directory.write_diagnostics(0, "", "")
+
+        directory = self.run_directory.trial_directory(0)
+        self.assertEqual((directory / "stdout.txt").read_bytes(), b"")
+        self.assertEqual((directory / "stderr.txt").read_bytes(), b"")
+
+    def test_failure_is_checkpoint_error_and_cleans_temp_file(self) -> None:
+        with patch(
+            "black_box_optimizer.persistence.os.replace",
+            side_effect=OSError("disk full"),
+        ):
+            with self.assertRaisesRegex(CheckpointError, "trial_id 4"):
+                self.run_directory.write_diagnostics(4, "out", "err")
+
+        directory = self.run_directory.trial_directory(4)
+        self.assertEqual(tuple(directory.glob("*.tmp")), ())
+
+
 class CheckpointTests(unittest.TestCase):
     """Tests for flattened and atomically replaced history.csv checkpoints."""
 

@@ -137,7 +137,11 @@ the next person can resume without reconstructing recent decisions.
   resolved JSON shape, deterministic Pareto CSV, text summary, and a
   noninteractive plot of the first two declared objectives. Controller
   finalization now builds and returns the authoritative result, delegates it to
-  Reporter exactly once, and reaches `STOPPED` after successful output.
+  Reporter exactly once, and reaches `STOPPED` after successful output. The
+  runner now uses synchronous `Popen`, terminates then kills after a two-second
+  grace period when required, returns bounded last-line diagnostics, and makes
+  complete decoded streams available for trial-local persistence. A cancelled
+  worker produces exactly one cancelled record and a cancelled result.
 - Active ownership: Codex owns controller integration on
   `work/2026-08-01-1947-controller-repair`; Mel reviews the controller and
   result contracts. The approved initialization direction is recorded in
@@ -153,12 +157,12 @@ the next person can resume without reconstructing recent decisions.
   two-second grace period, and bounded 1,000-character last-line diagnostics
   are approved. Continue timestamped branches, checkpoint commits, non-squash
   merges, verified tags, and merged-branch cleanup.
-- Verification: All 208 tests pass under Python 3.13.14. Python 3.13 has NumPy
+- Verification: All 222 tests pass under Python 3.13.14. Python 3.13 has NumPy
   2.5.1 and CPU-only PyTorch 2.13.0 installed while unqualified `python` and
   `pip` remain on the intended AppData Python 3.11 installation. The hygiene
   checker passes across 43 source files without advisories. Matplotlib 3.11.1
   is installed for the approved Reporter plot work, and `pip check` reports no
   broken requirements.
-- Next work: Implement `Popen` cancellation, bounded diagnostics, and
-  trial-local stdout/stderr. Application/CLI composition and end-to-end
-  verification follow.
+- Next work: Implement the separate application initialization/composition
+  boundary and CLI, then add real controller-to-Iris and failure-path
+  acceptance coverage before the final documentation and Git review pass.

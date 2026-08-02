@@ -124,8 +124,9 @@ def build_trial_record(
     """
     Build one immutable TrialRecord.
 
-    execution_result is the dict runner.execute() returns: runtime_seconds,
-    exit_code, timed_out, execution_status, and error_message.
+    execution_result contains the record fields returned by runner.execute().
+    Private stdout/stderr observations are persisted separately and ignored by
+    this factory.
 
     NOTE!!!!!! The design spec shows a shortened version of this signature. This
     implementation matches the real runner instead -- metrics_path is one of
