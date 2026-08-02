@@ -123,28 +123,31 @@ Keep this section brief and current. Update it after every repository change so
 the next person can resume without reconstructing recent decisions.
 
 - Last updated: 2026-08-01
-- Current state: `main` implements immutable configuration, seeded RandomSearch,
-  synchronous subprocess execution, metrics parsing, immutable `TrialRecord`,
-  append-only `TrialHistory`, maximum-trial stop decisions, and the external
-  Iris/PyTorch worker. The real-worker integration suite exercises search,
-  runner, worker, metrics, records, history, and stop policy together. The
-  application controller, durable persistence, full Pareto evaluation,
-  results, reporting, and CLI are not on `main`, so no runnable optimizer entry
-  point exists yet. An active remote controller branch is unmerged and must not
-  be described as current `main` behavior.
-- Decisions: This documentation realignment changes no JSON, CLI, CSV,
-  `TrialRecord`, eligibility, dominance, result, persistence, or dependency
-  contract. Use the authority order and merged-interface notes above. Keep
-  PyTorch outside optimizer runtime imports. Continue timestamped work branches,
-  non-squash merges, verified checkpoint tags, and deletion of merged branches.
-- Verification: All 134 tests pass under course-required Python 3.13.14 and
-  default local Python 3.11. Python 3.13 has NumPy 2.5.1 and CPU-only PyTorch
-  2.13.0 installed through `py -3.13 -m pip`; unqualified `python` and `pip`
-  remain on the intended AppData Python 3.11 installation. The source-hygiene
-  checker passes across 31 scanned source files.
-- Next work: Review and repair the unmerged application-controller branch before
-  merge, including its persistence exception mismatch and the required
-  pre-launch candidate-validation boundary. Then complete full Pareto
-  dominance/front evaluation, result construction, reporting, and CLI
-  composition. The merged runner diagnostic defect remains tracked in
-  `KNOWN_ISSUES.md`.
+- Current state: `main` now includes the partial `ApplicationController`, run
+  directories and atomic history checkpoints, Pareto eligibility, and the
+  previously implemented configuration, search, runner, records, history,
+  stop-policy, and real Iris worker boundaries. Controller finalization, full
+  Pareto evaluation, immutable results, reporting, and CLI composition remain
+  incomplete. The merged controller must be repaired before those seams are
+  completed.
+- Decisions: Mel authorized Codex to own the remaining controller integration,
+  with Mel as controller and result-contract reviewer. Initialization is a
+  separate application/composition concern rather than a lifecycle-controller
+  state; this emergent direction from the draft TDS must be documented.
+  Declared-domain validation is required before launch; domain-valid worker
+  failures are recoverable trials, and exclusion grammar is outside the MVP.
+  `CheckpointError`, partial valid fronts for cancelled/failed results, a
+  separate Reporter, approved report defaults, `Popen` cancellation with a
+  two-second grace period, and bounded 1,000-character last-line diagnostics
+  are approved. Continue timestamped branches, checkpoint commits, non-squash
+  merges, verified tags, and merged-branch cleanup.
+- Verification: All 176 tests pass under Python 3.13.14. Python 3.13 has NumPy
+  2.5.1 and CPU-only PyTorch 2.13.0 installed while unqualified `python` and
+  `pip` remain on the intended AppData Python 3.11 installation. The hygiene
+  checker passes across 37 source files with one line-length advisory in
+  `tests/test_persistence.py`.
+- Next work: Repair the merged controller baseline, beginning with initialization
+  separation, pre-launch candidate validation, and persistence-error behavior.
+  Then implement full Pareto/results/finalization, Reporter exports, cancellation,
+  bounded diagnostics, trial-local streams, CLI composition, and end-to-end
+  verification under Python 3.13.14.

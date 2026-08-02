@@ -11,12 +11,12 @@ objectives when the remaining MVP composition work is complete.
 
 `main` currently implements immutable configuration and candidate models, the
 validated JSON loader, seeded RandomSearch, synchronous worker execution,
-metrics parsing, immutable trial records, append-only in-memory history,
-maximum-trial stop decisions, and an external PyTorch Iris worker. A real
-integration test exercises those components together through actual worker
-subprocesses. The application controller, durable run persistence, full Pareto
-evaluation, final results, reporting, and command-line entry point are not on
-`main` yet, so the repository does not yet provide a runnable optimizer.
+metrics parsing, immutable trial records, append-only history, maximum-trial
+stop decisions, the Application Controller's core lifecycle loop, partial
+persistence, Pareto eligibility, and an external PyTorch Iris worker. Full
+Pareto evaluation, final results, reporting, controller finalization, and the
+command-line entry point remain incomplete, so the repository does not yet
+provide a runnable optimizer.
 
 See [docs/architecture-baseline.md](docs/architecture-baseline.md) for the
 controlling foundation contracts and MVP boundaries.
@@ -92,14 +92,14 @@ CSCI-3038-Final_Project/
 |   |-- cli.py                        # planned CLI composition
 |   |-- models.py                     # implemented immutable foundation types
 |   |-- config_loader.py              # implemented JSON parsing and validation
-|   |-- controller.py                 # planned sequential lifecycle governor
+|   |-- controller.py                 # implemented (partial); FINALIZING is an open seam
 |   |-- runner.py                     # implemented synchronous subprocess boundary
 |   |-- metrics.py                    # implemented one-row CSV parser
 |   |-- records.py                    # implemented TrialRecord construction
 |   |-- history.py                    # implemented append-only TrialHistory
-|   |-- persistence.py                # planned durable history snapshots
+|   |-- persistence.py                # implemented (partial); run dir + history checkpoints only
 |   |-- stop_policy.py                # implemented maximum-trial decisions
-|   |-- pareto.py                     # planned eligibility and dominance
+|   |-- pareto.py                     # implemented (partial); is_eligible() only
 |   |-- results.py                    # planned ParetoFront/OptimizationResult
 |   |-- reporting.py                  # planned result export boundary
 |   `-- search/
@@ -125,6 +125,9 @@ CSCI-3038-Final_Project/
 |   |-- test_random_search.py         # implemented RandomSearch tests
 |   |-- test_worker.py                # implemented Iris worker tests
 |   |-- test_check_monoliths.py       # implemented hygiene-checker tests
+|   |-- test_controller.py            # implemented ApplicationController tests
+|   |-- test_pareto.py                # implemented is_eligible() tests
+|   |-- test_persistence.py           # implemented RunDirectory tests
 |   |-- unit/                         # planned focused unit tests
 |   |-- integration/
 |   |   |-- test_one_trial_slice.py   # implemented module-level slice
@@ -154,7 +157,8 @@ optimizer package.
 | Runner | CLI construction, timeout, and process observations | Search or objective interpretation |
 | Record factory | Metrics parsing and immutable trial evidence | History mutation beyond one append request |
 | Trial history | Ordered append-only records and tuple snapshots | Ranking, deletion, or rewriting evidence |
-| Pareto evaluator | Eligibility, mixed-direction dominance, full front | Weighted scoring or worker execution |
+| Persistence | Run/per-trial directories and atomic history.csv checkpoints | Ranking, evaluating, or interpreting metrics |
+| Pareto evaluator | Eligibility (implemented), dominance and full front (planned) | Weighted scoring or worker execution |
 | Reporting/GUI | Presentation of authoritative results | Optimizer state or universal-winner selection |
 
 The intended dependency direction is inward toward immutable contracts. The
@@ -194,6 +198,9 @@ Additional implemented surfaces are imported from their owning modules:
 - `black_box_optimizer.history.TrialHistory`
 - `black_box_optimizer.stop_policy.StopDecision` and `StopPolicyEvaluator`
 - `black_box_optimizer.runner.execute`
+- `black_box_optimizer.controller.ApplicationController`
+- `black_box_optimizer.pareto.is_eligible`
+- `black_box_optimizer.persistence.RunDirectory` and `create_run_directory`
 - `black_box_optimizer.search.base.ProposalResult` and `SearchAlgorithm`
 - `black_box_optimizer.search.registry.create_algorithm`
 - `black_box_optimizer.search.random_search.RandomSearch`
@@ -261,12 +268,14 @@ Run the repository-wide source hygiene check:
 py -3.13 tools\check_monoliths.py
 ```
 
-At the 2026-08-01 documentation checkpoint, all 134 tests pass under the
-course-required Python 3.13.14 interpreter and under the default local Python
-3.11 environment. The source-hygiene check also passes.
+At the 2026-08-01 documentation checkpoint, all 176 tests pass under the
+course-required Python 3.13.14 interpreter. The source-hygiene check passes
+across 37 source files with one line-length advisory in
+`tests/test_persistence.py`.
 
-The application does not yet have a runnable optimizer entry point. On `main`,
-the next composition boundary is the sequential application controller plus
-durable run persistence. Full Pareto evaluation, result construction,
-reporting, and CLI composition follow that boundary. An in-progress remote
-work branch is not part of the `main` implementation status described here.
+The application does not yet have a runnable optimizer entry point. The next
+composition boundary is repairing the merged controller, including separate
+application initialization, declared-domain candidate validation, and durable
+persistence-error behavior. Full Pareto evaluation, result construction,
+reporting, cancellation-aware execution, diagnostics, and CLI composition
+follow that repair.

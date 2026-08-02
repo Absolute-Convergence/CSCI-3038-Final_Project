@@ -31,6 +31,15 @@ The exact summary, truncation, and redaction rules affect a controlled
 diagnostic contract and require human agreement before implementation. The
 existence of a useful bounded cause is already required by TDS section 10.4.
 
+Same root cause has a second consequence: TDS section 10.4 wants full
+stdout/stderr preserved in trial-local files (`stdout.txt`/`stderr.txt`
+next to each trial's `metrics.csv`, per section 9.1's example tree).
+`persistence.py`'s `RunDirectory` has no method for this yet, and can't
+until `runner.py` actually returns the captured output -- right now
+`subprocess.run(capture_output=True)` captures it and then it's just
+thrown away. One `runner.py` fix (return the captured output) unblocks
+both this and the `error_message` issue above.
+
 ## Resolved
 
 _(move fixed entries here with the PR number instead of deleting them)_
