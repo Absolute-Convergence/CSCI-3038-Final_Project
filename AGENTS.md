@@ -128,9 +128,10 @@ the next person can resume without reconstructing recent decisions.
   previously implemented configuration, search, runner, records, history,
   stop-policy, and real Iris worker boundaries. Controller finalization, full
   Pareto evaluation, immutable results, reporting, and CLI composition remain
-  incomplete. The repair branch now validates proposed candidates against the
-  declared domain before launch and normalizes valid mappings into contract
-  order. Invalid proposals launch no worker and enter fatal finalization.
+  incomplete. The active stack validates proposed candidates before launch and
+  now implements eligibility, mixed-direction dominance, the complete
+  history-ordered `ParetoFront`, and immutable `OptimizationResult` status
+  semantics. Invalid proposals launch no worker and enter fatal finalization.
 - Active ownership: Codex owns controller integration on
   `work/2026-08-01-1947-controller-repair`; Mel reviews the controller and
   result contracts. The approved initialization direction is recorded in
@@ -146,12 +147,12 @@ the next person can resume without reconstructing recent decisions.
   two-second grace period, and bounded 1,000-character last-line diagnostics
   are approved. Continue timestamped branches, checkpoint commits, non-squash
   merges, verified tags, and merged-branch cleanup.
-- Verification: All 184 tests pass under Python 3.13.14. Python 3.13 has NumPy
+- Verification: All 201 tests pass under Python 3.13.14. Python 3.13 has NumPy
   2.5.1 and CPU-only PyTorch 2.13.0 installed while unqualified `python` and
   `pip` remain on the intended AppData Python 3.11 installation. The hygiene
   checker passes across 37 source files with one line-length advisory in
   `tests/test_persistence.py`.
-- Next work: Implement full Pareto evaluation and immutable result contracts,
-  then replace the controller's finalization placeholder. Reporter exports,
-  cancellation, bounded diagnostics, trial-local streams, CLI composition, and
-  end-to-end verification follow.
+- Next work: Implement persistence final outputs and the separate Reporter,
+  then replace the controller's finalization placeholder. Cancellation, bounded
+  diagnostics, trial-local streams, CLI composition, and end-to-end verification
+  follow.

@@ -1,14 +1,4 @@
-"""
-Focused tests for is_eligible() from pareto.py.
-
-Right now pareto.py only has the eligibility check because persistence
-needs it for history.csv. These tests cover that function through the
-real TrialRecord and OptimizationContract implementations.
-
-KNOWN GAP!!! Once the dominance comparison and full ParetoFront sweep
-are added, this file will need more tests for those pieces too. For now
-it is intentionally just the is_eligible() corner of the Pareto world.
-"""
+"""Focused tests for mixed-direction Pareto evaluation."""
 
 from __future__ import annotations
 
@@ -21,7 +11,12 @@ from black_box_optimizer.models import (
     ParameterDefinition,
     ParameterKind,
 )
-from black_box_optimizer.pareto import is_eligible
+from black_box_optimizer.pareto import (
+    ParetoFront,
+    build_pareto_front,
+    dominates,
+    is_eligible,
+)
 from black_box_optimizer.records import TrialRecord
 
 
@@ -41,13 +36,14 @@ def make_contract() -> OptimizationContract:
 
 
 def make_record(
+    trial_id: int = 0,
     execution_status: str = "completed",
     metrics_status: str = "valid",
     metrics: dict[str, float] | None = None,
 ) -> TrialRecord:
     """Build a small TrialRecord with only the fields these tests need."""
     return TrialRecord(
-        trial_id=0,
+        trial_id=trial_id,
         parameters={"learning_rate": 0.05},
         metrics={} if metrics is None else metrics,
         execution_status=execution_status,
@@ -157,6 +153,122 @@ class IsEligibleTests(unittest.TestCase):
         is_eligible(record, contract)
 
         self.assertEqual(dict(record.metrics), before)
+
+
+class DominanceTests(unittest.TestCase):
+    def test_mixed_direction_dominance(self) -> None:
+        contract = make_contract()
+        better = make_record(metrics={"accuracy": 0.9, "loss": 0.2})
+        worse = make_record(
+            trial_id=1,
+            metrics={"accuracy": 0.8, "loss": 0.3},
+        )
+
+        self.assertTrue(dominates(better, worse, contract))
+        self.assertFalse(dominates(worse, better, contract))
+
+    def test_tradeoff_does_not_dominate(self) -> None:
+        contract = make_contract()
+        accurate = make_record(metrics={"accuracy": 0.9, "loss": 0.4})
+        low_loss = make_record(
+            trial_id=1,
+            metrics={"accuracy": 0.8, "loss": 0.2},
+        )
+
+        self.assertFalse(dominates(accurate, low_loss, contract))
+        self.assertFalse(dominates(low_loss, accurate, contract))
+
+    def test_equal_objectives_do_not_strictly_dominate(self) -> None:
+        contract = make_contract()
+        left = make_record(metrics={"accuracy": 0.9, "loss": 0.2})
+        right = make_record(
+            trial_id=1,
+            metrics={"accuracy": 0.9, "loss": 0.2},
+        )
+
+        self.assertFalse(dominates(left, right, contract))
+        self.assertFalse(dominates(right, left, contract))
+
+    def test_ineligible_record_never_dominates(self) -> None:
+        contract = make_contract()
+        failed = make_record(
+            execution_status="process_failed",
+            metrics_status="valid",
+            metrics={"accuracy": 1.0, "loss": 0.0},
+        )
+        completed = make_record(
+            trial_id=1,
+            metrics={"accuracy": 0.5, "loss": 0.5},
+        )
+
+        self.assertFalse(dominates(failed, completed, contract))
+
+
+class ParetoFrontTests(unittest.TestCase):
+    def test_hand_calculated_mixed_direction_front(self) -> None:
+        contract = make_contract()
+        records = (
+            make_record(
+                trial_id=0,
+                metrics={"accuracy": 0.8, "loss": 0.4},
+            ),
+            make_record(
+                trial_id=1,
+                metrics={"accuracy": 0.85, "loss": 0.35},
+            ),
+            make_record(
+                trial_id=2,
+                metrics={"accuracy": 0.9, "loss": 0.5},
+            ),
+            make_record(
+                trial_id=3,
+                metrics={"accuracy": 0.75, "loss": 0.3},
+            ),
+            make_record(
+                trial_id=4,
+                metrics={"accuracy": 0.85, "loss": 0.35},
+            ),
+            make_record(
+                trial_id=5,
+                execution_status="process_failed",
+                metrics_status="valid",
+                metrics={"accuracy": 1.0, "loss": 0.0},
+            ),
+        )
+
+        front = build_pareto_front(records, contract)
+
+        self.assertEqual(
+            tuple(record.trial_id for record in front.records),
+            (1, 2, 3, 4),
+        )
+
+    def test_empty_eligible_set_returns_empty_front(self) -> None:
+        failed = make_record(
+            execution_status="process_failed",
+            metrics_status="missing",
+        )
+
+        front = build_pareto_front((failed,), make_contract())
+
+        self.assertEqual(front.records, ())
+
+    def test_front_copies_input_to_tuple(self) -> None:
+        records = [
+            make_record(metrics={"accuracy": 0.9, "loss": 0.2})
+        ]
+
+        front = ParetoFront(records=records)
+        records.clear()
+
+        self.assertEqual(len(front), 1)
+
+    def test_front_rejects_duplicate_trial_ids(self) -> None:
+        first = make_record(metrics={"accuracy": 0.9, "loss": 0.2})
+        duplicate = make_record(metrics={"accuracy": 0.8, "loss": 0.3})
+
+        with self.assertRaisesRegex(ValueError, "duplicate trial IDs"):
+            ParetoFront(records=(first, duplicate))
 
 
 if __name__ == "__main__":
