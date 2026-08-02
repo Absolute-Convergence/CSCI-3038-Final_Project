@@ -54,12 +54,9 @@ class ControllerState(StrEnum):
     STOPPED = "stopped"
 
 
-# KNOWN GAP
-# EXECUTING may still have a living child process
-# RECORDING has a finished worker but may be halfway through committing
-# the completed trial to history
-# An interrupt in either state is raised again because neither can be
-# honestly treated as a clean prelaunch cancellation yet
+# Runner owns interrupts while a child is active and returns a cancelled
+# observation. If that private contract is violated, or interruption lands
+# during evidence persistence, the controller must not fabricate completion.
 _UNSAFE_TO_CANCEL_STATES = (
     ControllerState.EXECUTING,
     ControllerState.RECORDING,
@@ -252,10 +249,8 @@ class ApplicationController:
                     )
 
         except KeyboardInterrupt:
-            # KNOWN GAP
-            # Prelaunch cancellation is safe to finalize normally
-            # Midworker or midrecording cancellation is raised again because
-            # the controller cannot guarantee a clean child shutdown or commit
+            # Prelaunch cancellation is safe to finalize normally. Runner owns
+            # child shutdown; RECORDING may be inside an evidence commit.
             if self.state in _UNSAFE_TO_CANCEL_STATES:
                 raise
 

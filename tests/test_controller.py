@@ -455,7 +455,7 @@ class ControllerTerminationReasonTests(unittest.TestCase):
             "shutdown detail",
         )
 
-    def test_interrupt_during_execution_is_not_swallowed(self) -> None:
+    def test_unexpected_runner_interrupt_is_not_swallowed(self) -> None:
         contract = make_contract()
         algorithm = create_algorithm(
             AlgorithmSpec(name="random_search", seed=7)
@@ -477,9 +477,8 @@ class ControllerTerminationReasonTests(unittest.TestCase):
             "black_box_optimizer.runner.execute",
             side_effect=_interrupted_execute,
         ):
-            # KNOWN GAP
-            # The controller cannot safely kill the blocked child yet so the
-            # interrupt must stay loud instead of becoming user_cancelled
+            # Runner owns child shutdown and normally returns a cancelled
+            # observation. A runner that violates that boundary stays loud.
             with self.assertRaises(KeyboardInterrupt):
                 controller.run()
 
