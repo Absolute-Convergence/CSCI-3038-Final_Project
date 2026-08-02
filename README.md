@@ -20,6 +20,10 @@ optimizer package.
 See [docs/architecture-baseline.md](docs/architecture-baseline.md) for the
 controlling foundation contracts and MVP boundaries.
 
+See [docs/gui-handoff-next-steps.md](docs/gui-handoff-next-steps.md) for the
+recommended handoff from Charles's Tkinter GUI to Hyperloop's existing CLI and
+run artifacts.
+
 The current planning guidance is the aligned Draft v0.2 document set in
 [`docs/planning_baseline_v02`](docs/planning_baseline_v02). It remains pending
 team ratification and technical approval. Draft v0.1 is preserved unchanged in
@@ -139,6 +143,7 @@ CSCI-3038-Final_Project/
 |   `-- fixtures/                     # implemented purpose-built workers
 |-- docs/
 |   |-- architecture-baseline.md      # implemented controlling baseline
+|   |-- gui-handoff-next-steps.md     # recommended GUI integration sequence
 |   |-- planning_baseline_v01/        # preserved historical planning baseline
 |   `-- planning_baseline_v02/        # current aligned draft planning guidance
 `-- tools/

@@ -144,7 +144,9 @@ the next person can resume without reconstructing recent decisions.
   before trial 1; `python -m black_box_optimizer` is now runnable. The example
   Iris configuration explicitly launches its worker through `py -3.13`.
   Repository-root `runs/` contains generated local evidence and is ignored by
-  Git.
+  Git. `docs/gui-handoff-next-steps.md` now records the recommended
+  contract-preserving handoff from Charles's Tkinter/Pillow GUI to the existing
+  CLI and run artifacts.
 - Integration record: Mel reviewed and merged PRs #12 through #15. Because
   PRs #13 through #15 retained their stacked branch bases, a final
   main-targeted integration merge was required to land their already-reviewed
@@ -160,15 +162,21 @@ the next person can resume without reconstructing recent decisions.
   separate Reporter, approved report defaults, `Popen` cancellation with a
   two-second grace period, and bounded 1,000-character last-line diagnostics
   are approved. Continue timestamped branches, checkpoint commits, non-squash
-  merges, verified tags, and merged-branch cleanup.
+  merges, verified tags, and merged-branch cleanup. Hyperloop is the canonical
+  product name; `black_box_optimizer` remains the implemented Python module
+  and CLI namespace unless Mel approves a compatibility change.
 - Verification: All 229 tests pass under Python 3.13.14. Python 3.13 has NumPy
   2.5.1 and CPU-only PyTorch 2.13.0 installed while unqualified `python` and
   `pip` remain on the intended AppData Python 3.11 installation. The hygiene
   checker passes across 51 source files without advisories. Matplotlib 3.11.1
   is installed for the approved Reporter plot work, and `pip check` reports no
   broken requirements. Git ignore verification covers the populated default
-  `runs/` output directory.
-- Next work: Decide the GUI visualization handoff with Charles. A new pickle
-  artifact would change the reporting/output contract and requires Mel's
-  approval; do not add it as an incidental implementation detail. No other MVP
-  implementation work remains after the verified integration checkpoint.
+  `runs/` output directory. The 229-test suite and hygiene checker were rerun
+  after adding the GUI handoff guide; both pass, and its referenced local paths
+  exist.
+- Next work: Charles should review and implement the contract-preserving GUI
+  sequence in `docs/gui-handoff-next-steps.md`, beginning with complete
+  multi-objective JSON construction, launching Hyperloop instead of the opaque
+  worker, and loading the existing PNG/CSV/JSON artifacts. Do not add pickle or
+  another reporting/CLI contract without Mel's prior approval. No other core
+  MVP implementation work remains after the verified integration checkpoint.
