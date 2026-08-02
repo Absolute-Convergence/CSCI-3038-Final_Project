@@ -164,7 +164,7 @@ the next person can resume without reconstructing recent decisions.
   checker passes across 51 source files without advisories. Matplotlib 3.11.1
   is installed for the approved Reporter plot work, and `pip check` reports no
   broken requirements.
-- Next work: Mel reviews the completed stack in draft PRs #12, #13, #14, and
-  #15, in that order. After approval, merge without squashing in the same
-  order, tag each verified checkpoint, resolve the runner issue entry, and
-  clean up the merged branches.
+- Next work: Mel reviews the completed stack in ready-for-review PRs #12, #13,
+  #14, and #15, in that order. After approval, merge without squashing in the
+  same order, tag each verified checkpoint, resolve the runner issue entry,
+  and clean up the merged branches.
