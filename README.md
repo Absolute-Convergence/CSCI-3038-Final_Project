@@ -230,7 +230,9 @@ Each invocation creates a unique `run_*` directory. It contains the resolved
 configuration, atomically checkpointed `history.csv`, one directory per trial,
 the complete Pareto CSV, a text summary, and a PNG showing the first two
 declared objectives. Every recorded trial directory contains `stdout.txt` and
-`stderr.txt`; `metrics.csv` exists only when the worker produced it.
+`stderr.txt`; `metrics.csv` exists only when the worker produced it. The
+repository-root `runs/` directory is ignored by Git because these are local,
+generated run artifacts rather than source files.
 
 Normal completion and a no-eligible-trials result exit with code 0. Fatal
 failure exits with code 1, invalid initialization/configuration exits with code

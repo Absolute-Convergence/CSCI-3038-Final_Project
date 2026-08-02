@@ -143,6 +143,8 @@ the next person can resume without reconstructing recent decisions.
   separate application layer composes initialization and writes resolved config
   before trial 1; `python -m black_box_optimizer` is now runnable. The example
   Iris configuration explicitly launches its worker through `py -3.13`.
+  Repository-root `runs/` contains generated local evidence and is ignored by
+  Git.
 - Integration record: Mel reviewed and merged PRs #12 through #15. Because
   PRs #13 through #15 retained their stacked branch bases, a final
   main-targeted integration merge was required to land their already-reviewed
@@ -164,7 +166,9 @@ the next person can resume without reconstructing recent decisions.
   `pip` remain on the intended AppData Python 3.11 installation. The hygiene
   checker passes across 51 source files without advisories. Matplotlib 3.11.1
   is installed for the approved Reporter plot work, and `pip check` reports no
-  broken requirements.
-- Next work: No MVP implementation work remains after the verified integration
-  checkpoint. Preserve the architectural baseline and use formal change
-  control for any later public-contract or scope change.
+  broken requirements. Git ignore verification covers the populated default
+  `runs/` output directory.
+- Next work: Decide the GUI visualization handoff with Charles. A new pickle
+  artifact would change the reporting/output contract and requires Mel's
+  approval; do not add it as an incidental implementation detail. No other MVP
+  implementation work remains after the verified integration checkpoint.

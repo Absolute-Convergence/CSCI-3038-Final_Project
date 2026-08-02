@@ -8,6 +8,15 @@ _(no confirmed open defects at this checkpoint)_
 
 ## Resolved
 
+### CLI run artifacts appeared as untracked source files
+
+The CLI defaults to the repository-root `runs/` directory, but that generated
+output directory was initially absent from `.gitignore`. A normal 20-trial Iris
+run therefore appeared as dozens of untracked CSV, PNG, JSON, summary, and
+diagnostic files. The root-only `/runs/` rule now excludes current and future
+local run artifacts without deleting them or ignoring unrelated nested
+directories named `runs`.
+
 ### `runner.py`: `process_failed` trials lost their error message
 
 At the start of this work, merged `main` used `subprocess.run()` and discarded
