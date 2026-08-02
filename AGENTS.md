@@ -133,7 +133,9 @@ the next person can resume without reconstructing recent decisions.
   history-ordered `ParetoFront`, and immutable `OptimizationResult` status
   semantics. Both result types live in `black_box_optimizer.results`; Pareto
   algorithms remain in `black_box_optimizer.pareto`. Invalid proposals launch
-  no worker and enter fatal finalization.
+  no worker and enter fatal finalization. The separate `Reporter` writes the
+  resolved JSON shape, deterministic Pareto CSV, text summary, and a
+  noninteractive plot of the first two declared objectives.
 - Active ownership: Codex owns controller integration on
   `work/2026-08-01-1947-controller-repair`; Mel reviews the controller and
   result contracts. The approved initialization direction is recorded in
@@ -149,13 +151,13 @@ the next person can resume without reconstructing recent decisions.
   two-second grace period, and bounded 1,000-character last-line diagnostics
   are approved. Continue timestamped branches, checkpoint commits, non-squash
   merges, verified tags, and merged-branch cleanup.
-- Verification: All 201 tests pass under Python 3.13.14. Python 3.13 has NumPy
+- Verification: All 207 tests pass under Python 3.13.14. Python 3.13 has NumPy
   2.5.1 and CPU-only PyTorch 2.13.0 installed while unqualified `python` and
   `pip` remain on the intended AppData Python 3.11 installation. The hygiene
-  checker passes across 41 source files with one line-length advisory in
+  checker passes across 43 source files with one line-length advisory in
   `tests/test_persistence.py`. Matplotlib 3.11.1 is installed for the approved
   Reporter plot work, and `pip check` reports no broken requirements.
-- Next work: Implement persistence final outputs and the separate Reporter,
-  then replace the controller's finalization placeholder. Cancellation, bounded
-  diagnostics, trial-local streams, CLI composition, and end-to-end verification
+- Next work: Replace the controller's finalization placeholder with immutable
+  result construction and Reporter delegation. Cancellation, bounded diagnostics,
+  trial-local streams, application/CLI composition, and end-to-end verification
   follow.
