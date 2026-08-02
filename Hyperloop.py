@@ -508,14 +508,51 @@ class ConfigApp:
             )
 
     def optimizer_finished(self, output_dir):
+        """Display a summary when the optimizer finishes."""
+
         self.go_btn.config(state="normal")
 
-        os.startfile(output_dir)
+        self.last_output_dir = Path(output_dir)
 
-        messagebox.showinfo(
-            "Finished",
-            f"Optimization completed!\n\nResults saved to:\n{output_dir}"
-        )    
+        window = tk.Toplevel(self.root)
+        window.title("Optimization Complete")
+        window.iconphoto(False, self.app_icon)
+        window.resizable(False, False)
+
+        frame = ttk.Frame(window, padding=20)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(
+            frame,
+            text="✓ Optimization Complete",
+            font=("Segoe UI", 14, "bold"),
+        ).pack(anchor="w", pady=(0, 15))
+
+        ttk.Label(
+            frame,
+            text="The optimization finished successfully.",
+        ).pack(anchor="w")
+
+        ttk.Label(
+            frame,
+            text=f"\nResults Directory:\n{output_dir}",
+            justify="left",
+        ).pack(anchor="w", pady=(10, 20))
+
+        button_frame = ttk.Frame(frame)
+        button_frame.pack(fill="x")
+
+        ttk.Button(
+            button_frame,
+            text="Open Results Folder",
+            command=lambda: os.startfile(output_dir),
+        ).pack(side="left", padx=5)
+
+        ttk.Button(
+            button_frame,
+            text="Close",
+            command=window.destroy,
+        ).pack(side="right", padx=5)
 
     def optimizer_failed(self, error):
         self.go_btn.config(state="normal")
