@@ -130,6 +130,10 @@ the next person can resume without reconstructing recent decisions.
   Pareto evaluation, immutable results, reporting, and CLI composition remain
   incomplete. The merged controller must be repaired before those seams are
   completed.
+- Active ownership: Codex owns controller integration on
+  `work/2026-08-01-1947-controller-repair`; Mel reviews the controller and
+  result contracts. The approved initialization direction is recorded in
+  `docs/decisions/2026-08-01-controller-integration.md`.
 - Decisions: Mel authorized Codex to own the remaining controller integration,
   with Mel as controller and result-contract reviewer. Initialization is a
   separate application/composition concern rather than a lifecycle-controller
