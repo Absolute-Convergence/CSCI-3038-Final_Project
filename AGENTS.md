@@ -122,7 +122,7 @@ controlled contract without human agreement:
 Keep this section brief and current. Update it after every repository change so
 the next person can resume without reconstructing recent decisions.
 
-- Last updated: 2026-08-01
+- Last updated: 2026-08-03
 - Current state: The integrated MVP includes configuration,
   declared-domain candidate validation, search, synchronous cancellable runner,
   immutable records/results, append-only history, atomic persistence, the full
@@ -133,50 +133,53 @@ the next person can resume without reconstructing recent decisions.
   `black_box_optimizer.pareto`. Invalid proposals launch no worker and enter
   fatal finalization. The separate `Reporter` writes the resolved JSON shape,
   deterministic Pareto CSV, text summary, and a
-  noninteractive plot of the first two declared objectives. Controller
-  finalization now builds and returns the authoritative result, delegates it to
-  Reporter exactly once, and reaches `STOPPED` after successful output. The
-  runner now uses synchronous `Popen`, terminates then kills after a two-second
-  grace period when required, returns bounded last-line diagnostics, and makes
-  complete decoded streams available for trial-local persistence. A cancelled
-  worker produces exactly one cancelled record and a cancelled result. The
-  separate application layer composes initialization and writes resolved config
-  before trial 1; `python -m black_box_optimizer` is now runnable. The example
-  Iris configuration explicitly launches its worker through `py -3.13`.
-  Repository-root `runs/` contains generated local evidence and is ignored by
-  Git. `docs/gui-handoff-next-steps.md` now records the recommended
-  contract-preserving handoff from Charles's Tkinter/Pillow GUI to the existing
-  CLI and run artifacts.
-- Integration record: Mel reviewed and merged PRs #12 through #15. Because
-  PRs #13 through #15 retained their stacked branch bases, a final
-  main-targeted integration merge was required to land their already-reviewed
-  trees on `main`. The approved initialization direction is recorded in
-  `docs/decisions/2026-08-01-controller-integration.md`.
-- Decisions: Mel authorized Codex to own the remaining controller integration,
-  with Mel as controller and result-contract reviewer. Initialization is a
-  separate application/composition concern rather than a lifecycle-controller
-  state; this emergent direction from the draft TDS must be documented.
-  Declared-domain validation is required before launch; domain-valid worker
-  failures are recoverable trials, and exclusion grammar is outside the MVP.
-  `CheckpointError`, partial valid fronts for cancelled/failed results, a
-  separate Reporter, approved report defaults, `Popen` cancellation with a
-  two-second grace period, and bounded 1,000-character last-line diagnostics
-  are approved. Continue timestamped branches, checkpoint commits, non-squash
-  merges, verified tags, and merged-branch cleanup. Hyperloop is the canonical
-  product name; `black_box_optimizer` remains the implemented Python module
-  and CLI namespace unless Mel approves a compatibility change.
-- Verification: All 229 tests pass under Python 3.13.14. Python 3.13 has NumPy
-  2.5.1 and CPU-only PyTorch 2.13.0 installed while unqualified `python` and
-  `pip` remain on the intended AppData Python 3.11 installation. The hygiene
-  checker passes across 51 source files without advisories. Matplotlib 3.11.1
-  is installed for the approved Reporter plot work, and `pip check` reports no
-  broken requirements. Git ignore verification covers the populated default
-  `runs/` output directory. The 229-test suite and hygiene checker were rerun
-  after adding the GUI handoff guide; both pass, and its referenced local paths
-  exist.
-- Next work: Charles should review and implement the contract-preserving GUI
-  sequence in `docs/gui-handoff-next-steps.md`, beginning with complete
-  multi-objective JSON construction, launching Hyperloop instead of the opaque
-  worker, and loading the existing PNG/CSV/JSON artifacts. Do not add pickle or
-  another reporting/CLI contract without Mel's prior approval. No other core
-  MVP implementation work remains after the verified integration checkpoint.
+  noninteractive plot of the first two declared objectives. Hyperloop (the
+  Tkinter/Pillow GUI) has landed on `main` per
+  `docs/gui-handoff-next-steps.md`'s handoff plan. NSGA-II (`nsga2`) is now a
+  second, opt-in `SearchAlgorithm`, registered alongside `random_search` in
+  `ALGORITHM_REGISTRY` with no changes to `controller.py`, `pareto.py`,
+  `persistence.py`, `history.py`, or `records.py`. It lives entirely in
+  `black_box_optimizer/search/nsga2.py`, reusing
+  `pareto.build_pareto_front()`/`is_eligible()` for non-dominated ranking and
+  `random_search._sample_value()`/`candidate_key()`/`_finite_space_size()`
+  for mutation, duplicate detection, and exhaustion; it depends on no
+  external MOEA library (no pymoo). `config_loader.py`'s algorithm-name
+  validation now checks `ALGORITHM_REGISTRY` instead of hardcoding
+  `random_search`, so any registered algorithm is selectable from a config
+  file. Design notes, including an after-the-build account of what actually
+  shipped, live in `docs/decisions/2026-08-02-nsga2-search-algorithm-design.md`.
+- Integration record: PR #20
+  (`work/2026-08-01-2348-nsga2-search-algorithm`) merged NSGA-II, its design
+  doc, the `config_loader.py` registry-based algorithm validation fix, a
+  40-test unit suite for `nsga2.py`, and a real-worker end-to-end pipeline
+  test into `main` as merge commit `7f5b0c4`. Working branch deleted locally
+  and remotely per convention.
+- Decisions: NSGA-II is hand-implemented rather than depending on pymoo --
+  pymoo's primary API assumes ownership of the evaluation loop (batch
+  `minimize()`), doesn't fit this project's one-worker-at-a-time controller,
+  and would need its own objective-direction/domain-type translation layer;
+  population size is intentionally small (`clamp(2 * num_parameters, 4,
+  10)`), so pymoo's batch-vectorization advantage wouldn't pay off here
+  anyway. Failed/ineligible trials get one shared worst rank rather than an
+  invented objective value, and `TrialHistory` is never rewritten with a
+  fake value. Population size also clamps to the finite search-space size
+  when smaller than the usual floor -- found via testing, not the original
+  design.
+- Verification: All 271 tests pass under Python 3.13.14 (the local `.venv`
+  had drifted to a stray 3.14.6 install; reinstalled `python@3.13` via
+  Homebrew and rebuilt `.venv` to match the course-required interpreter
+  exactly before this checkpoint). `nsga2.py` has 100% line and branch
+  coverage under `coverage.py` (a local dev install, not a project
+  dependency). The hygiene checker passes across 56 source files; unlike the
+  prior checkpoint it now reports non-blocking line-length advisories in
+  `nsga2.py` (3 lines), `tests/test_nsga2.py` (2 lines), and `Hyperloop.py`
+  (26 lines, pre-existing and unrelated to this work).
+- Next work: A ZDT1 synthetic multi-objective benchmark (Zitzler-Deb-Thiele,
+  1999) is planned but not yet started, on a new branch off this checkpoint
+  -- a lightweight `examples/zdt1_benchmark/worker.py` computing ZDT1's two
+  closed-form objectives (no model training), plus a multi-seed comparison
+  script measuring hypervolume for `random_search` vs `nsga2` against ZDT1's
+  known-optimal front. Motivation: the Iris worker's objectives
+  (`validation_accuracy`/`validation_loss`) are too correlated to exercise
+  NSGA-II's Pareto-diversity behavior, and a single seeded run of either
+  algorithm isn't a statistically meaningful comparison.
