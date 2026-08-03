@@ -148,12 +148,21 @@ the next person can resume without reconstructing recent decisions.
   `random_search`, so any registered algorithm is selectable from a config
   file. Design notes, including an after-the-build account of what actually
   shipped, live in `docs/decisions/2026-08-02-nsga2-search-algorithm-design.md`.
+  A new synthetic benchmark, `examples/zdt1_benchmark/`, evaluates ZDT1
+  (Zitzler-Deb-Thiele) directly -- two closed-form formulas, no model
+  training, real subprocess per trial through the same `WorkerSpec`/
+  `runner.py` contract every other worker uses. `compare_search_algorithms.py`
+  in that directory scores `random_search` against `nsga2` by hypervolume
+  relative to ZDT1's known-optimal Pareto front, across multiple seeds.
 - Integration record: PR #20
   (`work/2026-08-01-2348-nsga2-search-algorithm`) merged NSGA-II, its design
   doc, the `config_loader.py` registry-based algorithm validation fix, a
   40-test unit suite for `nsga2.py`, and a real-worker end-to-end pipeline
-  test into `main` as merge commit `7f5b0c4`. Working branch deleted locally
-  and remotely per convention.
+  test into `main` as merge commit `7f5b0c4`. PR #21
+  (`work/2026-08-03-1810-zdt1-benchmark`) merged the ZDT1 benchmark worker,
+  the comparison script, and a 12-test suite for the ZDT1 formula and
+  hypervolume math into `main` as merge commit `fc5121a`. Both working
+  branches deleted locally and remotely per convention.
 - Decisions: NSGA-II is hand-implemented rather than depending on pymoo --
   pymoo's primary API assumes ownership of the evaluation loop (batch
   `minimize()`), doesn't fit this project's one-worker-at-a-time controller,
@@ -164,22 +173,32 @@ the next person can resume without reconstructing recent decisions.
   invented objective value, and `TrialHistory` is never rewritten with a
   fake value. Population size also clamps to the finite search-space size
   when smaller than the usual floor -- found via testing, not the original
-  design.
-- Verification: All 271 tests pass under Python 3.13.14 (the local `.venv`
-  had drifted to a stray 3.14.6 install; reinstalled `python@3.13` via
-  Homebrew and rebuilt `.venv` to match the course-required interpreter
-  exactly before this checkpoint). `nsga2.py` has 100% line and branch
-  coverage under `coverage.py` (a local dev install, not a project
-  dependency). The hygiene checker passes across 56 source files; unlike the
-  prior checkpoint it now reports non-blocking line-length advisories in
-  `nsga2.py` (3 lines), `tests/test_nsga2.py` (2 lines), and `Hyperloop.py`
-  (26 lines, pre-existing and unrelated to this work).
-- Next work: A ZDT1 synthetic multi-objective benchmark (Zitzler-Deb-Thiele,
-  1999) is planned but not yet started, on a new branch off this checkpoint
-  -- a lightweight `examples/zdt1_benchmark/worker.py` computing ZDT1's two
-  closed-form objectives (no model training), plus a multi-seed comparison
-  script measuring hypervolume for `random_search` vs `nsga2` against ZDT1's
-  known-optimal front. Motivation: the Iris worker's objectives
-  (`validation_accuracy`/`validation_loss`) are too correlated to exercise
-  NSGA-II's Pareto-diversity behavior, and a single seeded run of either
-  algorithm isn't a statistically meaningful comparison.
+  design. The ZDT1 benchmark uses n=4 decision variables, not the original
+  paper's n=30 -- measured directly (20,000 random samples) that n=30's 29
+  nuisance parameters put the optimal region out of reach for either
+  algorithm within any practical trial budget, given this project's
+  uniform-reset mutation operator (resamples a fresh random value rather
+  than nudging toward a better one). Generated comparison output (raw CSV,
+  chart) is gitignored under `examples/zdt1_benchmark/comparison_results/`
+  as regenerable evidence, same treatment as `/runs/`.
+- Verification: All 283 tests pass under Python 3.13.14 (the course-required
+  interpreter; `.venv` was rebuilt from a stray 3.14.6 install during the
+  NSGA-II checkpoint and has stayed on 3.13.14 since). `nsga2.py` has 100%
+  line and branch coverage under `coverage.py` (a local dev install, not a
+  project dependency). The hygiene checker passes across 60 source files
+  with non-blocking line-length advisories in `nsga2.py` (3 lines),
+  `tests/test_nsga2.py` (2 lines), `compare_search_algorithms.py` (2 lines),
+  `tests/test_zdt1_benchmark.py` (1 line), and `Hyperloop.py` (26 lines,
+  pre-existing and unrelated to this work). A real 5-seed x 500-trial x
+  2-algorithm ZDT1 comparison (5,000 real subprocess trials) ran
+  successfully: NSGA2 averaged 64% more hypervolume than random_search
+  (0.389 vs 0.237, as a fraction of the true-optimal hypervolume: 44.4% vs
+  27.0%) and was more than twice as consistent run to run (stdev 0.069 vs
+  0.157).
+- Next work: Nothing queued. Possible directions if picked back up: a
+  harder real-worker benchmark (Iris's objectives are too correlated to
+  exercise Pareto diversity), parallel trial execution (a genuine
+  architecture change to `controller.py`'s one-worker-at-a-time loop, not
+  yet approved), or NSGA-II elitism (combining parent and offspring
+  populations before selection, the biggest remaining gap versus canonical
+  NSGA-II per its design doc).
