@@ -1,5 +1,6 @@
 # Black Box Optimizer run artifacts
 /runs/
+examples/zdt1_benchmark/comparison_results/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
