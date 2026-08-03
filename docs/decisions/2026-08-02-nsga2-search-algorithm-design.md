@@ -1,389 +1,289 @@
-# NSGA-II Search Algorithm: Design Notes
+# NSGA-II Search Algorithm Notes
 
-- Status: personal design notes for an in-progress exploration, not a team
-  decision or a contract amendment
-- Author: Emily
-- Date: 2026-08-02
-- Scope: an additional, opt-in `SearchAlgorithm` implementation, registered
-  alongside `RandomSearch`. Purely additive -- no changes to `controller.py`,
-  `pareto.py`, `persistence.py`, or any existing contract.
+- **Status:** personal design notes
+- **Author:** Emily Tew <3
+- **Scope:** an optional `SearchAlgorithm` implementation registered
+  alongside `RandomSearch`
 
-This version is heavily annotated on purpose. Every block below explains not
-just *what* the design says, but *why* it says that, so this can double as a
-"do I actually understand this" check before any code gets written.
+These notes started as a way to sanity-check the design before I wrote any
+code. By the end they also became a record of what actually shipped, what
+changed during implementation, and what I think could still improve later.
 
-## Why this and not just RandomSearch
+---
 
-The MVP boundary requires seeded `RandomSearch` -- the word is "required,"
-not "exclusive." `ALGORITHM_REGISTRY` in `search/registry.py` was already
-built as a plain dict mapping algorithm name to a factory function, which
-only makes sense as a design if more than one algorithm was always meant to
-be pluggable into it. Adding a second entry isn't fighting the architecture,
-it's using the extension point that's already there.
+# Why include NSGA-II?
 
-Why NSGA-II specifically, and not some other algorithm: this project's whole
-point is multi-objective optimization with a Pareto front, not a single
-"best" score. NSGA-II (Non-dominated Sorting Genetic Algorithm II) is the
-standard, textbook algorithm for exactly that problem shape. Random search
-never uses what it learned from earlier trials -- every draw is independent.
-NSGA-II's entire premise is the opposite: rank what you've already tried,
-breed the next batch from the better half, and repeat, so results should
-trend upward with each generation instead of just accumulating luck.
+The `search/registry.py` file was built around a registry of algorithms by
+name, allowing additional search algorithms to be registered without
+changing the controller. Random search is also intentionally simple, and 
+was meant to be included for the MVP version of the pipeline. 
 
-## The core architecture: two separate worlds, joined by a translator
+It is a totally great baseline search algorithm, but this project is 
+fundamentally about multi-objective optimization and Pareto fronts. If 
+there's any algorithm that naturally belongs beside random search, it's 
+NSGA-II. Instead of treating every proposal as another independent guess, 
+the addition of NSGA-II means we can use completed trials to influence what
+comes next.
 
-```text
-TrialHistory                 pymoo
-    parameters      ----->   decision variables
-    # our named, typed parameters (learning_rate=0.05, batch_size=16)
-    # become a plain numeric vector pymoo can do math on
+---
 
-    OptimizationContract ->  problem definition
-    # bounds, parameter kinds, and objective directions become pymoo's
-    # own "Problem" description of the search space
+# The Big Idea
 
-    metrics          ----->  objective values
-    # accuracy/loss/whatever becomes a plain numeric vector too --
-    # pymoo has zero opinion about what the numbers *mean*
+The existing `SearchAlgorithm` interface is:
+
+```python
+propose(contract, history)
 ```
 
-Why this separation matters: pymoo has never heard of a `TrialRecord`, a
-subprocess, a worker script, or a CSV file, and it never needs to. It only
-ever wants two things -- numbers describing a candidate, and numbers
-describing how that candidate did. Every domain-specific thing this project
-cares about (metrics validity, execution status, persistence, cancellation)
-stays entirely outside pymoo's world. Our job is only to be the translator
-standing at the boundary between the two. This is *good* -- it means a bug
-in the translator is easy to isolate (it can only be about conversion, not
-about genetics), and a bug in the genetics is easy to isolate too (pymoo's
-own code is already tested by its own maintainers).
+The controller expects exactly one candidate per call. It does not know or
+care how that candidate was chosen.
+
+NSGA-II, however, naturally operates on whole generations rather than
+individual candidates.
 
 ```text
 Controller
-    asks for one candidate at a time, same as it does for RandomSearch
-    # the controller does not know or care that a "generation" concept
-    # exists on the other side of this call -- from its point of view,
-    # every SearchAlgorithm looks identical: propose(contract, history)
+    |
+    | propose(contract, history)
+    v
 
-GeneticAlgorithm (our SearchAlgorithm implementation)
-    holds a queue of already-generated, not-yet-proposed children
-    # this is the ONE piece of real, private state this class needs --
-    # see "Open problem #3" below for why this can't be avoided
+NSGA2
+    |
+    | generates a full generation
+    v
 
-    generates a new batch only when that queue is empty
-    # i.e., "did I already hand out everyone from this generation?"
+pending_children queue
+    |
+    | one candidate returned per call
+    v
 
-    reads completed TrialRecords from history to know when a generation
-    is complete
-    # this class never has to be *told* a generation finished -- it can
-    # always figure that out itself just by counting history
-
-Pymoo adapter (inside GeneticAlgorithm, or a small helper module)
-    converts parameter dicts into decision vectors
-    converts valid metrics into objective vectors
-    converts failed/ineligible trials into penalty vectors
-    # ^ this bullet is "Open problem #2" below -- do not skip it,
-    #   it's the single easiest thing to get quietly wrong
-
-    calls pymoo's ask/tell interface (not `minimize()` -- see below)
-    # ^ this is "Open problem #1" -- the single biggest API-fit risk
-
-TrialHistory
-    stays completely unchanged; still records real outcomes only
-    # nothing about adding this algorithm touches history.py, records.py,
-    # persistence.py, or controller.py at all -- if you find yourself
-    # wanting to edit one of those files for this work, stop and
-    # reconsider, because it probably means the adapter design is wrong
+Controller
 ```
-
-## Where a completed generation comes from
+ 
+To keep the existing `SearchAlgorithm` interface unchanged, the
+implementation bridges this mismatch with a small in-memory queue:
 
 ```python
-# every trial -- success OR failure -- still consumes exactly one
-# population "slot," in the order it was proposed. that's what makes
-# this slice trustworthy: it's not "the last N trials that happened to
-# succeed," it's "the last N trials, period," which is exactly one full
-# generation as long as generations are always proposed in fixed-size
-# batches (which this design guarantees -- see the propose() sketch below)
-generation = history[-population_size:]
+self._pending_children
 ```
 
-Why this is safe to rely on: it would NOT be safe if failed trials were
-silently skipped or excluded from the count, because then a generation of
-"nominally 8" might actually only have 6 real slots reflected in history,
-and the next slice boundary would land in the wrong place, mixing children
-from two different generations together. The fix for that risk is the
-penalty policy in Open problem #2 -- failed trials still occupy a slot,
-they just occupy it with a deliberately terrible score.
+When a new generation is bred, every child is placed into the queue.
 
-## Open problem #1: pymoo normally wants to own the whole loop
+Each subsequent `propose()` call returns one queued candidate. Once the
+queue is empty, the next generation is bred.
+
+This queue is the only algorithm-specific state maintained between calls.
+Everything else is reconstructed from `TrialHistory`.
+
+---
+
+# Major design decisions
+
+## Failed trials
+
+This ended up being the part I spent the most time pondering crazystyle.
+
+A `TrialRecord` isn't guaranteed to contain usable objective values.
+
+So, a worker can:
+
+- fail to launch
+- crash
+- time out
+- never produce metrics
+- produce malformed metrics
+- produce non-finite metrics
+
+Since our project treats those as normal outcomes, My original plan 
+(when I was still considering using pymoo) was to assign failed trials 
+artificial objective values like `+inf` and `-inf`. Once I decided not 
+to depend on a package anymore, that stopped making sense. 
+
+Luckily, the implementation that actually shipped ended up being much
+simpler!
+
+Failed or otherwise ineligible trials are removed from Pareto ranking
+entirely and all receive one shared rank after every real Pareto tier.
+
+That means:
+
+- successful trials always outrank failed ones
+- no fake objective values are invented
+-  `TrialRecord` is never modified
+- ranking only exists temporarily while breeding a generation
+
+`TrialHistory` always remains the source of truth.
+
+---
+
+## Why I didn't use a prebuilt package
+
+There are packages that already implement NSGA-II and the original plan was 
+not to write it all myself. I ended up deciding against it for a few reasons:
+
+First, its primary execution model assumes ownership of the evaluation loop.
+
+This project doesn't have a cheapo objective function. Each candidate means
+launching a real subprocess and waiting waiting waiting for a worker to 
+finish. We already have the controller file which owns that lifecycle!
+
+Second, using pymoo would require translating everything into and out of its
+own internal representation, which is bunk because our project already has 
+its own concepts of:
+
+- `TrialRecord`
+- `CandidateConfiguration`
+- `OptimizationContract`
+- objective directions
+- execution status
+- metrics validity
+
+Every adapter between those types and pymoo would be another place for bugs
+to hide.
+
+Finally, the populations here are intentionally small. The default population is 
+only a handful of candidates, and the expensive part of the run is model 
+training, not non-dominated sorting.
+
+At that scale, writing the ranking logic directly was just more simple than 
+building and maintaining any sort of adapter layer.
+
+---
+
+# What actually shipped
+
+The final implementation lives entirely in `search/nsga2.py`.
+
+It implements:
+
+- non-dominated ranking
+- crowding distance
+- binary tournament selection
+- uniform crossover
+- mutation
+- duplicate detection
+- generation management through `_pending_children`
+
+Rather than implementing another version of Pareto dominance, it repeatedly
+reuses the project's existing `pareto.build_pareto_front()` function to peel
+off one Pareto layer at a time. 
+
+Mutation also reuses `random_search._sample_value()` instead of introducing
+another parameter sampler. Duplicate detection reuses
+`random_search.candidate_key()`, and retries up to
+`_MAX_DUPLICATE_ATTEMPTS = 100` before giving up on a candidate. It's the 
+same limit `RandomSearch` already uses, kept consistent on purpose rather 
+than picking a new number.
+
+Crossover is uniform: each parameter independently has a 50/50 shot of
+coming from either parent. That's the one crossover strategy that behaves
+identically for FLOAT, INTEGER, and CATEGORICAL parameters so there's no
+meaningful blend between two category names. This means we never even 
+needed a parameter-kind-specific crossover rule, nice!
+
+Population size and mutation rate aren't defined anywhere in the original
+project spec, since NSGA-II itself is outside the MVP.
+
+- `population_size = min(max(2 * num_parameters, 4), 10)` which is enough
+  candidates per generation to actually rank and breed from, without one
+  generation eating an entire small example runs trial budget.
+- `mutation_rate = 1 / num_parameters` which targets one mutated parameter per child on average, This is a totally standard genetic-algorithm starting point.
+- `_default_population_size()` also clamps to the finite search space size.
+This was found via testing, not the original design. Without it, a tiny space (like
+one categorical parameter with 2 values) would demand the default minimum
+population of 4, and the first generation would fail instead of correctly
+reporting `search_exhausted`.
+
+The only existing project file that needing changing was `search/registry.py`, which
+registers `"nsga2"` alongside `"random_search"`. Everything else is totally
+additive and maintains the project's modular structure. :)
+
+Files it actually leverages, confirmed by import:
+
+- `pareto.py` -- `build_pareto_front()`, `is_eligible()`
+- `search/random_search.py` -- `_sample_value()`, `candidate_key()`,
+  `_finite_space_size()`
+- `search/base.py` -- `ProposalResult`, the `SearchAlgorithm` protocol it
+  implements
+- `models.py` -- `CandidateConfiguration`, `OptimizationContract`
+- `records.py` -- `TrialRecord`, read-only
+- `numpy` -- `np.random.default_rng(seed)` for all randomness, same
+  approach `RandomSearch` already uses
+
+---
+
+# Current limitations
+
+This implementation is actually not ~technically~ a canonical NSGA-II. The proper
+implementation of the algorithm requires elitism, which is missing here.
+
+Right now, one completed generation breeds the next generation directly.
 
 ```text
-# the pattern most pymoo tutorials show:
-population
-    |
-    v
-evaluate EVERYONE at once (a vectorized function call)
-    |
-    v
-population
-    |
-    v
-evaluate EVERYONE at once again
-    |
-    v
-... repeat until done, all inside one blocking call to minimize()
+generation N
+      ↓
+rank + breed
+      ↓
+generation N + 1
 ```
 
-Why this doesn't fit us: "evaluate everyone at once" assumes you can hand
-pymoo a batch of candidates and immediately get back a matching batch of
-scores, as if the evaluation function were cheap and instantaneous. Ours is
-not -- each candidate means launching a real subprocess, training a real
-model, and waiting for it to finish, one at a time, because
-`runner.py`/`controller.py` are built around "no more than one worker
-process active at a time" and that isn't changing for this work.
-
-**Resolution:** pymoo's ask/tell interface (`algorithm.ask()` /
-`algorithm.tell()`) is built for exactly this situation -- an external loop
-that controls timing, and only tells pymoo about results whenever it has
-them. This still needs to be *verified directly against pymoo's real docs*
-before committing further -- specifically, confirm it can produce offspring
-from an already-evaluated population without pymoo trying to run its own
-evaluation cycle internally. If ask/tell turns out not to support that
-cleanly, the fallback is to use only pymoo's individual crossover/mutation/
-selection operators as building blocks, and keep the whole generation loop
-written by hand inside our own code. Either path works; ask/tell is just
-less code to write ourselves if it holds up.
-
-## Open problem #2: failed and ineligible trials (the important one)
+Standard NSGA-II instead combines the parent and offspring populations,
+ranks the combined population, and keeps only the best survivors.
 
 ```text
-# WRONG mental model (this is what the simple diagram above implies,
-# and it's not actually true):
-TrialRecord.metrics  ALWAYS has valid numbers  ---->  objective vector
-
-# ACTUAL reality in this project:
-TrialRecord.execution_status can be:
-    "completed"       -> probably has real metrics
-    "process_failed"  -> no usable metrics at all
-    "launch_failed"    -> no usable metrics at all
-    "timed_out"        -> no usable metrics at all
-TrialRecord.metrics_status can independently be:
-    "valid"        -> numbers are real and finite
-    "missing"      -> no metrics file was ever produced
-    "malformed"    -> a metrics file existed but didn't parse
-    "nonfinite"    -> a metrics file existed but had NaN/inf in it
+parents
+     \
+      +------+
+             |
+offspring ---+
+             |
+             ↓
+non-dominated sorting
+             ↓
+best N survive
 ```
 
-Why this matters so much: this whole project's design (`metrics.py`,
-`records.py`, `pareto.is_eligible()`) treats failure as a completely normal,
-expected, first-class outcome -- not an edge case to bolt on later. A real
-NSGA-II adapter has to have an explicit answer for "what objective value
-does a failed trial get," or the very first run with even one crashed
-worker will break in a confusing way (missing dictionary key, `None`
-where a float was expected, etc.).
+That elitist survival step hasn't been implemented yet. The current implementation 
+also keeps its pending child queue entirely in memory. If the process crashes halfway 
+through a generation, any children still in the queue are lost.(That isn't unique to 
+this algorithm, since the project currently doesn't persist the internal state of 
+random search either)
 
-**Policy:** give every failed/ineligible trial a penalty value that's worse
-than every valid trial could ever be, on every objective, respecting each
-objective's own direction:
+Most of the implementation was verified through development and manual
+testing, but there isn't yet a `test_nsga2.py` covering the ranking,
+selection, mutation, and generation-management logic.
 
-```python
-# pseudocode, not real code -- direction-aware penalty assignment
-def penalty_value(objective):
-    if objective.direction is Direction.MINIMIZE:
-        # for something we're trying to make SMALL (like loss),
-        # the worst possible value is the largest possible value
-        return float("inf")
+---
 
-    # objective.direction is Direction.MAXIMIZE
-    # for something we're trying to make BIG (like accuracy),
-    # the worst possible value is the smallest possible value
-    return float("-inf")
-```
+# Optional improvements
 
-```text
-# stated plainly:
-minimize loss:      failed trial's penalty value = +infinity  (worst)
-maximize accuracy:  failed trial's penalty value = -infinity  (worst)
-```
+None of these are required for the current implementation to work. They're
+just ideas that would make it more complete.
 
-Why this specific approach (as opposed to just, say, zero): using an
-actual infinity guarantees the failed individual is dominated by *every*
-valid individual, no matter what scale the real objective values happen to
-be on. A magic number like zero or -1 could accidentally NOT be the worst
-possible value if the real objective's range includes something even worse
--- infinity can't have that problem.
+## Canonical NSGA-II elitism
 
-**Caveat that needs verifying directly against pymoo, not assumed:** pymoo
-typically converts every objective internally into a minimization problem,
-negating maximized objectives rather than keeping our own
-MAXIMIZE/MINIMIZE labels around. That means the adapter needs ONE
-consistent convention -- most likely: always convert to pymoo's internal
-minimization representation *first*, and only then decide the penalty sign,
-rather than deciding the penalty sign using our own project-level direction
-and hoping it survives pymoo's conversion unchanged. Mixing "our" directions
-with "pymoo's" directions in the same function is exactly the kind of thing
-that produces a bug that only shows up on the MAXIMIZE objectives, not the
-MINIMIZE ones (or vice versa) -- annoying to debug because half the tests
-would pass.
+Retain the previous parent population.
 
-**This does not touch real history, ever -- worth repeating clearly:** the
-penalty value is a fiction that exists *only* inside the pymoo adapter's
-translation step, for the duration of one call, and disappears immediately
-after. `TrialHistory` is never rewritten to pretend a failed trial produced
-infinity. Its real `execution_status`, `metrics_status`, and
-`error_message` stay exactly what they actually were, forever. If a test
-ever accidentally checks a real `TrialRecord`'s metrics and finds infinity
-in it, that's a sign the adapter leaked its internal fiction somewhere it
-shouldn't have.
+After evaluating a generation, combine parents and offspring, rank the
+combined population, and keep the best `population_size` survivors.
 
-**Alternative that was considered and rejected:** exclude failed trials
-from parent selection entirely, instead of penalizing them. Rejected
-because it shrinks the effective population size unpredictably (a
-generation with 3 failures out of 8 only has 5 real candidates to select
-parents from), which then needs its own fallback logic for "what if too
-few valid parents remain." Penalizing keeps the population a fixed,
-predictable shape every single generation, which is simpler to write tests
-against.
+This is the single biggest remaining difference between the shipped
+implementation and real NSGA-II.
 
-## Open problem #3: this can't honestly be fully stateless
+## Better finite-space handling
 
-```text
-# the tempting-but-wrong idea:
-# "just re-derive everything from history every single propose() call,
-#  and keep zero internal state at all"
-#
-# why it doesn't actually work:
-propose() call #1 (first child of generation 2 needed)
-    -> re-run evolution from scratch on generation 1's results
-    -> get back a FRESH random batch of 8 children
-    -> hand out child at position 0
+The implementation correctly detects complete search exhaustion.
 
-propose() call #2 (second child of generation 2 needed)
-    -> re-run evolution from scratch on generation 1's results AGAIN
-    -> unless this is seeded with painstaking, deliberate care to
-       reproduce the EXACT SAME random draws as call #1, this produces
-       a DIFFERENT batch of 8 children, not the same one
-    -> "position 1" of this new batch has no relationship to
-       "position 1" of the batch from call #1
-    -> now you've silently thrown away child 0 from call #1 and are
-       handing out an unrelated stranger instead
-```
+One edge case still exists when fewer unused candidates remain than the
+normal population size. Allowing the final generation to shrink instead of
+trying to build a full batch would avoid an unnecessary
+`proposal_failed`.
 
-Why the naive "no state at all" idea breaks: asking pymoo to evolve a
-generation is a single call that produces the *whole* next generation's
-children at once, and that process involves randomness (which parents get
-picked, how crossover mixes their genes, whether/how mutation perturbs the
-result). `propose()`, on the other hand, only ever gets to return ONE
-candidate per call. Something has to bridge that gap -- either genuinely
-reproducible, deliberately-reseeded-identically-every-time randomness
-(technically possible, but fragile and easy to get subtly wrong), or just...
-remembering the batch you already made.
+## Crash recovery
 
-**Resolution:** keep one small, explicit, honest piece of real state --
-a queue holding this generation's already-generated children, computed
-once per generation boundary, handed out one at a time as `propose()`
-gets called:
+Adding persistent `_pending_children`, RNG state and current parent population
+would make interrupted runs resumable without regenerating future generations 
+from scratch.
 
-```python
-# pseudocode sketch, not real code
-class GeneticAlgorithm:
-    def __init__(self, ...):
-        # this queue is the ONLY piece of state beyond what RandomSearch
-        # already needs (a seeded RNG). everything else gets re-derived
-        # from history fresh, every call.
-        self.pending_children: deque[CandidateConfiguration] = deque()
-        self.generation_number = 0
-
-    def propose(self, contract, history):
-        if self.pending_children:
-            # still have leftover children from the last time we bred
-            # a generation -- just hand out the next one, no new work
-            return candidate_result(self.pending_children.popleft())
-
-        if not_enough_history_for_a_full_generation(history):
-            # generation zero: no parents exist yet, so seed randomly,
-            # same idea as RandomSearch, just with a fixed batch size
-            return random_initial_candidate(contract)
-
-        # otherwise: a full generation's results just landed in history,
-        # and the queue is empty -- time to breed the next one
-        evaluated_population = build_pymoo_population(
-            history[-population_size:], contract,
-        )  # <- this is where Open problem #2's penalty policy applies
-        children = ask_pymoo_for_next_generation(evaluated_population)
-        self.pending_children.extend(children)
-        self.generation_number += 1
-
-        return candidate_result(self.pending_children.popleft())
-```
-
-```text
-# so the accurate, honest split of responsibility is:
-
-TrialHistory   = durable truth
-                 (what was evaluated, what succeeded or failed,
-                  the real objective values, when a generation is done)
-
-pending queue  = temporary, in-memory-only control state
-                 (which children have already been generated,
-                  which one comes back next)
-```
-
-This is a meaningfully more honest description than "TrialHistory is the
-only source of truth and nothing else needs state" -- that phrase sounds
-clean but isn't quite accurate. The correct claim is narrower: history is
-the only source of truth about *what actually happened*, but the algorithm
-still needs a small amount of its own bookkeeping about *what it has
-already decided to do next but hasn't told anyone about yet.*
-
-## Open problem #4: what if the process crashes mid-generation
-
-```text
-# scenario: 50 children get generated and queued, but only 12 are
-# evaluated (their results are in history) before the process dies.
-# the other 38, still sitting in pending_children, only ever existed
-# in memory -- they're gone.
-#
-# three theoretical options:
-#   1. accept it: a restarted run just regenerates a different
-#      remainder of the generation from scratch
-#   2. persist the pending queue itself into the run's checkpoint
-#   3. reconstruct the exact same queue deterministically from the
-#      prior generation + generation number + seed + operator config
-```
-
-**This is already answered by existing project precedent -- it is not a
-new decision this design needs to make.** The MVP explicitly and
-deliberately excludes "resume-after-interruption behavior" as a project-
-wide boundary. Nothing in this codebase persists any search algorithm's
-state across a process restart today -- not even `RandomSearch`, which
-recomputes its own `attempted_keys` fresh from history on every single
-`propose()` call, and would produce a different remainder of its own
-sampling sequence on a fresh process too, given the exact same seed and
-history. So option 1 (accept it) isn't a compromise being made just for
-this algorithm -- it's the same behavior every existing algorithm in this
-project already has. An in-memory-only `pending_children` queue needs no
-special persistence work, because nothing else gets that treatment either.
-
-## Build order (repeating it here so it lives with the design, not just
-## in conversation)
-
-1. Random generation-zero seeding only. No genetics yet.
-2. Generation-boundary detection only, still no genetics -- prove the
-   code can look at history and correctly say "generation N is complete."
-3. Non-dominated sorting as a standalone function, tested against a small
-   hand-worked fixture where the correct ranking is already known by hand.
-4. Crowding distance as a standalone function, same treatment.
-5. Selection (tournament, based on rank + crowding) as a standalone
-   function, tested with an already-ranked fixture, no randomness needed.
-6. Crossover and mutation as standalone functions last -- reuse
-   `_sample_value()` from `random_search.py` for mutation instead of
-   writing a new per-kind sampler from scratch.
-7. Only now, wire everything above together inside `propose()`.
-8. Register it: one factory function, one line in `ALGORITHM_REGISTRY`.
-
-Verify pymoo's actual ask/tell API directly, for real, before committing
-further to any of the above -- this entire adapter design assumes it exists
-and behaves as described, and that assumption has not been confirmed
-against pymoo's real documentation yet.
+I intentionally didn't solve that here because the rest of the project
+doesn't solve it either.
