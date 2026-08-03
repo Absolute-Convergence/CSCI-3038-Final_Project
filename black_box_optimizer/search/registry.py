@@ -13,6 +13,7 @@ from collections.abc import Callable, Mapping
 
 from black_box_optimizer.models import AlgorithmSpec
 from black_box_optimizer.search.base import SearchAlgorithm
+from black_box_optimizer.search.nsga2 import NSGA2
 from black_box_optimizer.search.random_search import RandomSearch
 
 AlgorithmFactory = Callable[[AlgorithmSpec], SearchAlgorithm]
@@ -27,9 +28,19 @@ def build_random_search(spec: AlgorithmSpec) -> SearchAlgorithm:
     return RandomSearch(seed=spec.seed)
 
 
+def build_nsga2(spec: AlgorithmSpec) -> SearchAlgorithm:
+    """Build an NSGA-II search algorithm from the supplied settings.
+
+    An additional, opt-in algorithm -- nothing about registering it here
+    changes what build_random_search()/RandomSearch do above.
+    """
+    return NSGA2(seed=spec.seed)
+
+
 # Just a plain built in mapping for there is no plugin system here
 ALGORITHM_REGISTRY: Mapping[str, AlgorithmFactory] = {
     "random_search": build_random_search,
+    "nsga2": build_nsga2,
 }
 
 
