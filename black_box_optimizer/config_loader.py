@@ -19,11 +19,11 @@ from black_box_optimizer.models import (
     StopPolicy,
     WorkerSpec,
 )
+from black_box_optimizer.search.registry import ALGORITHM_REGISTRY
 
 
 JsonObject = dict[str, object]
 _ModelT = TypeVar("_ModelT")
-_SUPPORTED_ALGORITHM = "random_search"
 _PATH_SUFFIXES = frozenset(
     {".bat", ".cmd", ".exe", ".ps1", ".py", ".pyw", ".sh"}
 )
@@ -386,8 +386,14 @@ def _build_algorithm(
         issues=issues,
     ):
         return None
-    if section["name"] != _SUPPORTED_ALGORITHM:
-        issues.append("algorithm.name: must be random_search for the MVP")
+    if section["name"] not in ALGORITHM_REGISTRY:
+        # random_search remains the well-known default most configs will
+        # name, but validation defers to the registry rather than
+        # hardcoding one algorithm -- registering a new SearchAlgorithm in
+        # ALGORITHM_REGISTRY is enough to make it choosable from a config
+        # file too, with no second list to keep in sync.
+        valid = sorted(ALGORITHM_REGISTRY)
+        issues.append(f"algorithm.name: must be one of {valid}")
         return None
     return _construct(
         "algorithm",

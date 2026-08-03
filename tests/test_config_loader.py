@@ -90,6 +90,20 @@ class ConfigurationLoaderTests(unittest.TestCase):
         self.assertEqual(configuration.algorithm.seed, 42)
         self.assertEqual(configuration.stop_policy.max_trials, 20)
 
+    def test_accepts_any_registered_algorithm_name_not_just_random_search(
+        self,
+    ) -> None:
+        # random_search is still the common default, but validation defers
+        # to ALGORITHM_REGISTRY -- nsga2 is registered there too and must
+        # be just as loadable from a config file.
+        document = self.valid_document()
+        document["algorithm"] = {"name": "nsga2", "seed": 7}
+
+        configuration = load_configuration(self.write_document(document))
+
+        self.assertEqual(configuration.algorithm.name, "nsga2")
+        self.assertEqual(configuration.algorithm.seed, 7)
+
     def test_preserves_parameter_and_objective_order(self) -> None:
         configuration = load_configuration(
             self.write_document(self.valid_document())
@@ -203,7 +217,7 @@ class ConfigurationLoaderTests(unittest.TestCase):
 
         message = str(caught.exception)
         self.assertIn("minimum cannot exceed maximum", message)
-        self.assertIn("algorithm.name: must be random_search", message)
+        self.assertIn("algorithm.name: must be one of", message)
         self.assertIn("max_trials must be positive", message)
 
     def test_rejects_unknown_nested_fields(self) -> None:
