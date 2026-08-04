@@ -1,0 +1,23 @@
+{
+  "worker": {
+    "command": [
+      "hyperloop-synthetic-worker"
+    ],
+    "metrics_argument": "--metrics-out",
+    "timeout_seconds": 10.0
+  },
+  "optimization": {
+    "parameters": [
+      {"name": "x1", "kind": "float", "minimum": 0.0, "maximum": 1.0},
+      {"name": "x2", "kind": "float", "minimum": 0.0, "maximum": 1.0},
+      {"name": "x3", "kind": "float", "minimum": 0.0, "maximum": 1.0},
+      {"name": "x4", "kind": "float", "minimum": 0.0, "maximum": 1.0}
+    ],
+    "objectives": [
+      {"metric_name": "f1", "direction": "minimize"},
+      {"metric_name": "f2", "direction": "minimize"}
+    ]
+  },
+  "algorithm": {"name": "random_search", "seed": 42},
+  "stop_policy": {"max_trials": 4}
+}

@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from black_box_optimizer.cli import main
+from black_box_optimizer.cli import _build_parser, main
 from black_box_optimizer.config_loader import ConfigurationError
 
 
@@ -27,6 +27,16 @@ def make_session(status: str, termination_reason: str):
 
 
 class CliTests(unittest.TestCase):
+    def test_entry_points_have_distinct_help_names(self) -> None:
+        self.assertEqual(
+            _build_parser("python -m black_box_optimizer").prog,
+            "python -m black_box_optimizer",
+        )
+        self.assertEqual(
+            _build_parser("hyperloop-optimizer").prog,
+            "hyperloop-optimizer",
+        )
+
     def test_result_statuses_map_to_stable_exit_codes(self) -> None:
         cases = (
             ("completed", "maximum_trials", 0),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import sys
 import tempfile
@@ -84,6 +85,44 @@ class ApplicationInitializationTests(unittest.TestCase):
             "summary.txt",
         ):
             self.assertTrue((session.run_directory.path / filename).is_file())
+
+    def test_repeated_runs_do_not_reuse_an_older_pareto_front(self) -> None:
+        output_directory = self.directory / "runs"
+        write_configuration(self.configuration_path, max_trials=2)
+        first_session = initialize_application(
+            self.configuration_path,
+            output_directory,
+        )
+        first_result = first_session.run()
+        first_pareto_path = (
+            first_session.run_directory.path / "pareto_front.csv"
+        )
+        first_pareto_before = first_pareto_path.read_bytes()
+
+        write_configuration(self.configuration_path, max_trials=1)
+        second_session = initialize_application(
+            self.configuration_path,
+            output_directory,
+        )
+        second_result = second_session.run()
+
+        self.assertNotEqual(
+            first_session.run_directory.path,
+            second_session.run_directory.path,
+        )
+        self.assertEqual(first_result.attempted_count, 2)
+        self.assertEqual(first_result.pareto_count, 2)
+        self.assertEqual(second_result.attempted_count, 1)
+        self.assertEqual(second_result.pareto_count, 1)
+        self.assertEqual(len(tuple(output_directory.iterdir())), 2)
+        self.assertEqual(first_pareto_path.read_bytes(), first_pareto_before)
+
+        second_pareto_path = (
+            second_session.run_directory.path / "pareto_front.csv"
+        )
+        with second_pareto_path.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.DictReader(stream))
+        self.assertEqual([row["trial_id"] for row in rows], ["0"])
 
 
 if __name__ == "__main__":

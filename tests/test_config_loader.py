@@ -153,8 +153,31 @@ class ConfigurationLoaderTests(unittest.TestCase):
             (
                 "py",
                 "-3.13",
-                str((path.parent / "worker.py").resolve()),
+                str((path.parent / "iris_worker.py").resolve()),
             ),
+        )
+
+    def test_loads_repository_synthetic_worker_example(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        path = (
+            repository_root
+            / "examples"
+            / "zdt1_benchmark"
+            / "synthetic_config.json"
+        )
+
+        configuration = load_configuration(path)
+
+        self.assertEqual(
+            configuration.worker.command,
+            ("hyperloop-synthetic-worker",),
+        )
+        self.assertEqual(
+            tuple(
+                parameter.name
+                for parameter in configuration.optimization.parameters
+            ),
+            ("x1", "x2", "x3", "x4"),
         )
 
     def test_reports_invalid_json_with_location(self) -> None:

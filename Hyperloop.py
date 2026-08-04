@@ -111,7 +111,10 @@ class ConfigApp:
         
         ttk.Label(frame, text="Command (comma separated):").grid(row=0, column=0, sticky="w")
         self.cmd_entry = ttk.Entry(frame, width=40)
-        self.cmd_entry.insert(0, "python, examples/iris_torch/worker.py")
+        self.cmd_entry.insert(
+            0,
+            "python, examples/iris_torch/iris_worker.py",
+        )
         self.cmd_entry.grid(row=0, column=1, pady=2)
         
         ttk.Label(frame, text="Metrics Argument:").grid(row=1, column=0, sticky="w")

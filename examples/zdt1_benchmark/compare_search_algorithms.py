@@ -1,11 +1,11 @@
 """
 compare_search_algorithms.py
 
-Runs RandomSearch and NSGA2 against the ZDT1 synthetic benchmark (see
-worker.py) across multiple seeds, and reports the hypervolume each
+Runs RandomSearch and NSGA2 against Hyperloop's synthetic ZDT1 worker across
+multiple seeds, and reports the hypervolume each
 achieves relative to ZDT1's known, closed-form optimal Pareto front.
 
-Nothing here is simulated: every trial launches worker.py as a real
+Nothing here is simulated: every trial launches synthetic_worker.py as a real
 subprocess, exactly the same way runner.py always does. What's different
 from the Iris example is that ZDT1 trials are near-instant (no model
 training), so this can afford many seeds x many trials -- the two things
@@ -19,7 +19,7 @@ a single, slow, real-worker run can't give you:
     eyeballed side by side.
 
 Usage:
-    python examples/zdt1_benchmark/compare_search_algorithms.py
+    python -m examples.zdt1_benchmark.compare_search_algorithms
 """
 
 from __future__ import annotations
@@ -49,9 +49,10 @@ from black_box_optimizer.models import (
 from black_box_optimizer.pareto import build_pareto_front
 from black_box_optimizer.records import build_trial_record
 from black_box_optimizer.search.registry import create_algorithm
+from hyperloop_workers import synthetic_worker
 
-_WORKER_PATH = Path(__file__).parent / "worker.py"
-# Must match worker.py's own _NUM_VARIABLES -- see that file's docstring
+_WORKER_PATH = Path(synthetic_worker.__file__).resolve()
+# Must match synthetic_worker.py's own _NUM_VARIABLES; see its docstring
 # for why this is 4, not the original ZDT1 paper's 30.
 _NUM_VARIABLES = 4
 
@@ -68,7 +69,7 @@ _OUTPUT_DIR = Path(__file__).parent / "comparison_results"
 
 
 def make_contract() -> OptimizationContract:
-    """The ZDT1 decision space: 30 floats in [0, 1], both objectives minimized."""
+    """Build the bounded ZDT1 space with two minimized objectives."""
     parameters = tuple(
         ParameterDefinition(f"x{i}", ParameterKind.FLOAT, 0.0, 1.0)
         for i in range(1, _NUM_VARIABLES + 1)
@@ -191,7 +192,9 @@ def write_raw_csv(
         writer.writerow(["algorithm", "seed", "trial_number", "hypervolume"])
         for (algorithm_name, seed), trace in traces.items():
             for trial_number, hypervolume in enumerate(trace, start=1):
-                writer.writerow([algorithm_name, seed, trial_number, hypervolume])
+                writer.writerow(
+                    [algorithm_name, seed, trial_number, hypervolume]
+                )
 
 
 def print_summary(
@@ -290,7 +293,8 @@ def main() -> None:
             elapsed = time.perf_counter() - started
             print(
                 f"[{completed}/{total_runs}] {algorithm_name} seed={seed} "
-                f"done ({elapsed:.1f}s elapsed)"
+                f"done ({elapsed:.1f}s elapsed)",
+                flush=True,
             )
 
     write_raw_csv(_OUTPUT_DIR / "raw_hypervolume_traces.csv", traces)
