@@ -9,6 +9,18 @@ No confirmed defects remain open at the package-release remediation checkpoint.
 
 ## Resolved
 
+### Hyperloop's "Open Results Folder" button crashed on macOS and Linux
+
+`os.startfile()` only exists on Windows. Clicking "Open Results Folder"
+after a successful run raised an unhandled `AttributeError` on macOS/Linux,
+so a genuinely completed optimization (real `history.csv`, `pareto_front.png`,
+etc. already on disk) looked like it had produced nothing. `Hyperloop.py`
+now dispatches on `sys.platform`: `os.startfile()` on Windows (unchanged
+from before), `open` on macOS, `xdg-open` on Linux, wrapped so a failure
+shows a dialog pointing at the results directory instead of crashing.
+Verified for real on macOS and on a real Windows machine before merging.
+PR #26.
+
 ### Invalid configuration paths leaked a raw `ValueError` on Windows
 
 On Windows, a null byte could survive `Path.resolve()` and fail later in
