@@ -270,6 +270,10 @@ class ParetoFrontTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate trial IDs"):
             ParetoFront(records=(first, duplicate))
 
+    def test_front_rejects_non_trial_record_items(self) -> None:
+        with self.assertRaisesRegex(TypeError, "TrialRecord"):
+            ParetoFront(records=("not a record",))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -151,6 +151,35 @@ class CandidateValidationTests(unittest.TestCase):
         self.assertIn("missing parameters: mode", message)
         self.assertIn("unexpected parameters: other", message)
 
+    def test_missing_parameters_alone_are_reported(self) -> None:
+        candidate = CandidateConfiguration(
+            parameters={"epochs": 4, "learning_rate": 0.01}
+        )
+
+        with self.assertRaises(CandidateValidationError) as raised:
+            validate_candidate(candidate, make_contract())
+
+        message = str(raised.exception)
+        self.assertIn("missing parameters: mode", message)
+        self.assertNotIn("unexpected parameters", message)
+
+    def test_extra_parameters_alone_are_reported(self) -> None:
+        candidate = CandidateConfiguration(
+            parameters={
+                "epochs": 4,
+                "learning_rate": 0.01,
+                "mode": "fast",
+                "bonus": "unexpected",
+            }
+        )
+
+        with self.assertRaises(CandidateValidationError) as raised:
+            validate_candidate(candidate, make_contract())
+
+        message = str(raised.exception)
+        self.assertNotIn("missing parameters", message)
+        self.assertIn("unexpected parameters: bonus", message)
+
 
 if __name__ == "__main__":
     unittest.main()

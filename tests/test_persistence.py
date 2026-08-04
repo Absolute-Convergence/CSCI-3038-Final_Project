@@ -196,6 +196,10 @@ class DiagnosticPersistenceTests(unittest.TestCase):
         directory = self.run_directory.trial_directory(4)
         self.assertEqual(tuple(directory.glob("*.tmp")), ())
 
+    def test_non_string_streams_are_rejected(self) -> None:
+        with self.assertRaisesRegex(TypeError, "must be strings"):
+            self.run_directory.write_diagnostics(5, b"out", "err")
+
 
 class CheckpointTests(unittest.TestCase):
     """Tests for flattened and atomically replaced history.csv checkpoints."""

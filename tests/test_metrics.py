@@ -9,6 +9,7 @@ from pathlib import Path
 from black_box_optimizer.metrics import (
     MetricsFormatError,
     NonFiniteMetricError,
+    _clean_headers,
     read_trial_metrics,
 )
 
@@ -164,6 +165,15 @@ class MetricsParserTests(unittest.TestCase):
         metrics = read_trial_metrics(path)
 
         self.assertEqual(set(metrics), {"accuracy", "loss"})
+
+    def test_clean_headers_rejects_an_empty_header_row(self) -> None:
+        # read_trial_metrics() itself can never reach this: csv.reader
+        # only ever produces a genuinely empty row ([]) for a fully blank
+        # line, and read_trial_metrics() already filters those out before
+        # _clean_headers() ever sees a row. This pins down the guard's own
+        # contract directly instead of leaving it silently untested.
+        with self.assertRaisesRegex(MetricsFormatError, "cannot be empty"):
+            _clean_headers([])
 
 
 if __name__ == "__main__":
