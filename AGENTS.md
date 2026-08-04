@@ -164,7 +164,10 @@ the next person can resume without reconstructing recent decisions.
   hypervolume math into `main` as merge commit `fc5121a`. PR #22
   (`work/2026-08-03-1903-test-bug-audit`) merged a coverage-closing pass
   (91% -> 99% overall, 80 new tests, 363 total) into `main` as merge commit
-  `d72d3c9`. All three working branches deleted locally and remotely per
+  `d72d3c9`. PR #23 (`work/2026-08-03-1940-bug-hunt`) fixed the
+  order-dependent crowding-distance bug in `nsga2.py` (see
+  `KNOWN_ISSUES.md`'s Resolved section) into `main` as merge commit
+  `341abdb`. All four working branches deleted locally and remotely per
   convention.
 - Decisions: NSGA-II is hand-implemented rather than depending on pymoo --
   pymoo's primary API assumes ownership of the evaluation loop (batch
@@ -202,18 +205,18 @@ the next person can resume without reconstructing recent decisions.
 - A separate, dedicated adversarial bug-hunt pass (six parallel reviewers,
   one per module cluster, run immediately after the coverage pass above
   reached 99% with no bugs found) found 11 real, independently-reproduced
-  bugs and 4 test-quality gaps that coverage alone never surfaces. Full
-  details, each with a concrete repro, are now recorded in
-  `KNOWN_ISSUES.md`'s Open section -- read that file before starting the
-  next branch instead of re-deriving this list. Two are critical
-  (`AlgorithmSpec` accepts a negative seed and crashes the CLI with an
-  unhandled traceback instead of a clean exit code; a `KeyboardInterrupt`
-  during report-writing mislabels a genuinely completed run as
-  "cancelled"). None of the 11 have been fixed yet -- this was a find-only
-  pass, no source code was changed.
-- Next work: Fix the bugs in `KNOWN_ISSUES.md`'s Open section, starting
-  with the two critical ones (negative-seed CLI crash, KeyboardInterrupt
-  mislabeling a completed run as cancelled), on a new
+  bugs and 4 test-quality gaps that coverage alone never surfaces. One
+  (the `nsga2.py` crowding-distance bug) is fixed as of PR #23; the other
+  10 are still open. Full details, each with a concrete repro, are
+  recorded in `KNOWN_ISSUES.md` (Open and Resolved sections) -- read that
+  file before starting the next branch instead of re-deriving this list.
+  Two of the remaining 10 are critical (`AlgorithmSpec` accepts a negative
+  seed and crashes the CLI with an unhandled traceback instead of a clean
+  exit code; a `KeyboardInterrupt` during report-writing mislabels a
+  genuinely completed run as "cancelled").
+- Next work: Fix the remaining bugs in `KNOWN_ISSUES.md`'s Open section,
+  starting with the two critical ones (negative-seed CLI crash,
+  KeyboardInterrupt mislabeling a completed run as cancelled), on a new
   `work/YYYY-MM-DD-HHmm-bug-hunt`-style branch. Once those land, older
   possible directions if picked back up: a harder real-worker benchmark
   (Iris's objectives are too correlated to exercise Pareto diversity),

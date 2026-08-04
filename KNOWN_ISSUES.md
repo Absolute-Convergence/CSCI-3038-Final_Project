@@ -40,21 +40,6 @@ once with each. Reproduced: a run whose one trial genuinely completed
 (`history` length 1) ends with `result.status == "cancelled"` and
 `reporter.calls == 2` after a `KeyboardInterrupt` on the first write.
 
-### NSGA2 crowding distance is order-dependent when an objective is tied
-
-`search/nsga2.py`'s `_crowding_distances()` marks `sorted_tier[0]`/
-`sorted_tier[-1]` as boundary (`float("inf")`) unconditionally, before
-checking whether that objective's range is zero (fully tied). When an
-objective is tied, Python's stable sort just preserves input order, so
-whichever records happen to land first/last in the *input* -- not the
-actual extremes -- get wrongly marked as boundary points. Reproduced: the
-same 4 records with one tied objective produce `{0: inf, 1: inf, 2: inf,
-3: inf}` in one input order and the mathematically-correct `{0: inf,
-1: 0.625, 2: 0.625, 3: inf}` in another, differing only by argument order.
-This biases NSGA2's parent selection toward incidental list position
-instead of genuine objective diversity whenever any tier has a tied
-objective (common with quantized or early-generation-plateau metrics).
-
 ### A failed per-trial `mkdir()` bypasses the checkpoint-failure safety net
 
 `persistence.py`'s `RunDirectory.trial_directory()` calls
@@ -160,6 +145,30 @@ contract's stated intent and what's actually handled. The same narrow
 `except OSError` pattern exists in `_atomic_write_text()`.
 
 ## Resolved
+
+### NSGA2 crowding distance was order-dependent when an objective was tied
+
+`search/nsga2.py`'s `_crowding_distances()` marked `sorted_tier[0]`/
+`sorted_tier[-1]` as boundary (`float("inf")`) unconditionally, before
+checking whether that objective's range was zero (fully tied). When an
+objective was tied, Python's stable sort just preserves input order, so
+whichever records happened to land first/last in the *input* -- not the
+actual extremes -- got wrongly marked as boundary points. Reproduced: the
+same 4 records with one tied objective produced `{0: inf, 1: inf, 2: inf,
+3: inf}` in one input order and the mathematically-correct `{0: inf,
+1: 0.625, 2: 0.625, 3: inf}` in another, differing only by argument order.
+This biased NSGA2's parent selection toward incidental list position
+instead of genuine objective diversity whenever any tier had a tied
+objective (common with quantized or early-generation-plateau metrics).
+Covered by `tests/test_nsga2.py`,
+`test_tied_objective_never_marks_a_boundary_regardless_of_input_order` --
+confirmed to fail against the pre-fix code and pass against the fix.
+
+PR #23 moved the `objective_range == 0` check before the boundary
+assignment, so a tied objective is now skipped entirely and contributes
+nothing, regardless of input order. Merged into `main` as `341abdb`. A
+follow-up aggressive re-read of the rest of `nsga2.py` found no further
+bugs.
 
 ### CLI run artifacts appeared as untracked source files
 
