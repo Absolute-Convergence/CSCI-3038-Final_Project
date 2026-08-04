@@ -44,13 +44,12 @@ does not declare Pillow as a GUI dependency in its package metadata.
 
 - Updated `main` baseline: 366 tests passed after PR #24 fixed negative-seed
   validation and before that change was merged into the package branch.
-- Merged package tree: 374 tests collected on Windows; 373 pass and one errors
-  because an invalid configuration path leaks a raw `ValueError`. This new
-  Windows-specific defect is recorded in `KNOWN_ISSUES.md`.
+- Remediated package tree: all 392 tests pass on Windows under Python 3.13.14,
+  including the formerly failing invalid-path regression.
 - Known-issue audit: PR #24 correctly fixes the negative-seed CLI crash. The
-  other nine upstream reports remain reproducible on the package branch.
-  Together with the Windows-specific finding, ten confirmed defects remain
-  open; no PyPI upload is approved while release blockers are unresolved.
+  other nine upstream reports and the Windows-specific finding are resolved on
+  the package branch with focused regression coverage. `KNOWN_ISSUES.md` has
+  no confirmed open defect at this checkpoint.
 - Generated-output barrier: `runs/`, `optimizer_runs/`, and ZDT1 comparison
   results are ignored.
 - Repeated-run test: an older two-trial Pareto front cannot enter a later
@@ -61,24 +60,27 @@ does not declare Pillow as a GUI dependency in its package metadata.
     deviation 0.1568.
   - NSGA-II mean final hypervolume: 0.3890 (44.4% of optimum), standard
     deviation 0.0692.
-- Isolated build: wheel and source archive built successfully and passed
-  `twine check`.
-- Clean install: direct requirements were only NumPy and Matplotlib; PyTorch
-  was absent; `hyperloop-optimizer --help` named the installed command.
+- Remediated-tree build: the wheel and source archive build successfully and
+  pass `twine check`. The wheel contains 30 entries, excludes the GUI, Iris,
+  examples, tests, documentation, and PyTorch, and exposes both approved
+  console commands.
+- Clean install: direct requirements are only NumPy and Matplotlib; PyTorch is
+  absent; both `hyperloop-optimizer --help` and
+  `hyperloop-synthetic-worker --help` succeed outside the checkout.
 - Installed smoke run: four valid synthetic trials completed and produced a
   three-member Pareto front with all required report artifacts.
-- Core-only test environment: 277 tests passed and four Iris/PyTorch modules
+- Core-only test environment: 378 tests pass and four Iris/PyTorch modules are
   skipped as intended.
 
 ## Remaining Gates
 
-- [ ] Resolve the validation, CLI, cross-platform path, controller-state, and
+- [x] Resolve the validation, CLI, cross-platform path, controller-state, and
   persistence defects recorded in `KNOWN_ISSUES.md`.
-- [ ] Decide whether result reporting must be atomic across the entire artifact
+- [x] Decide whether result reporting must be atomic across the entire artifact
   group or whether the public persistence contract must explicitly promise
   only per-file atomicity.
-- [ ] Run the final complete suite with PyTorch installed.
-- [ ] Run the repository source-hygiene checker after the last change.
+- [x] Run the final complete suite with PyTorch installed.
+- [x] Run the repository source-hygiene checker after the last change.
 - [ ] Open a pull request and require the Windows, Ubuntu, macOS, and package
   jobs in `.github/workflows/package.yml` to pass.
 - [ ] Build fresh archives from the exact release commit.

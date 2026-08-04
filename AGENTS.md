@@ -139,27 +139,28 @@ the next person can resume without reconstructing recent decisions.
   result.
 - Upstream integration: PR #22's coverage work, PR #23's deterministic NSGA-II
   tied-objective crowding-distance fix, and PR #24's negative-seed validation
-  fix are integrated. The current `KNOWN_ISSUES.md` records ten open,
-  independently reproduced defects: the nine remaining upstream reports plus
-  the Windows-specific invalid-path failure found on this package branch.
-  Package publication remains blocked pending triage and remediation.
+  fix are integrated. Mel approved the remaining package-remediation contract
+  choices. The ten remaining defects are fixed with focused regression tests;
+  `KNOWN_ISSUES.md` has no confirmed open defect on this branch. The approved
+  decisions are recorded in
+  `docs/decisions/2026-08-03-package-release-bug-remediation.md`.
 - Decisions: Publish one first PyPI release as v0.1.1 rather than reusing the
   existing v0.1.0 Git tag. Core direct dependencies are NumPy and Matplotlib;
   PyTorch stays exclusive to the Iris example, and Pillow may be installed
   only transitively through Matplotlib. Mel approved the dedicated
   `hyperloop-synthetic-worker` entry point so installed configurations do not
   guess the owning Python executable.
-- Verification: After integrating PR #24, the merged package tree collects
-  374 tests on Windows: 373 pass and only the already-recorded Windows
-  invalid-path test errors. All ten remaining defects were reproduced again.
-  The hygiene check passes across 62 source files. Clean wheel and sdist builds
-  passed
-  `twine check`, an isolated wheel install passed CLI and synthetic-worker
-  smoke tests, and the full 5-seed, 500-trial-per-algorithm ZDT1 benchmark
-  completed. The PR #24 merge must be reverified before handoff.
-- Next work: Classify the ten open defects, obtain approval for
-  contract-affecting fixes, remediate all agreed package-release blockers, then
-  rerun the complete test, hygiene, build, metadata, isolated-install, and
-  cross-platform CI gates before publication. The unresolved gate and the
-  result-report atomicity decision are recorded in
+- Verification: After the package-remediation pass, all 392 tests pass on
+  Windows under Python 3.13.14. The hygiene check passes across 62 source
+  files. Fresh wheel and sdist builds pass `twine check`; the 30-entry wheel
+  has only NumPy and Matplotlib as direct requirements and contains no GUI,
+  Iris, tests, examples, documentation, or PyTorch. A fresh install outside
+  the checkout passes both command help checks, `pip check`, and a four-trial
+  synthetic-worker run with every required artifact. In that PyTorch-free
+  environment, 378 tests pass and four Iris modules skip as intended. The full
+  5-seed, 500-trial-per-algorithm ZDT1 benchmark completed earlier.
+- Next work: Rebuild the wheel and sdist from this remediated tree, rerun
+  metadata and isolated-install smoke checks, review the branch, then require
+  the Windows/Ubuntu/macOS package workflow to pass in a pull request before
+  publication. The remaining release gates are recorded in
   `docs/package-release-checklist.md`.

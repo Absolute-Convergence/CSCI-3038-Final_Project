@@ -34,6 +34,15 @@ def _is_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _is_finite_number(value: object) -> bool:
+    if not _is_number(value):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except OverflowError:
+        return False
+
+
 def _is_parameter_value(value: object) -> bool:
     if isinstance(value, bool):
         return False
@@ -88,7 +97,7 @@ class ParameterDefinition:
         bounds = (self.minimum, self.maximum)
         if not all(_is_number(value) for value in bounds):
             raise ValueError("float parameters require numeric bounds")
-        if not all(math.isfinite(float(value)) for value in bounds):
+        if not all(_is_finite_number(value) for value in bounds):
             raise ValueError("float parameter bounds must be finite")
         if self.minimum >= self.maximum:
             raise ValueError("float minimum must be less than maximum")
@@ -170,9 +179,11 @@ class WorkerSpec:
             raise ValueError("metrics_argument must be a string")
         if not self.metrics_argument.startswith("--"):
             raise ValueError("metrics_argument must start with --")
+        if len(self.metrics_argument) == 2:
+            raise ValueError("metrics_argument must include a flag name")
         if not _is_number(self.timeout_seconds):
             raise ValueError("timeout_seconds must be numeric")
-        if not math.isfinite(float(self.timeout_seconds)):
+        if not _is_finite_number(self.timeout_seconds):
             raise ValueError("timeout_seconds must be finite")
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")

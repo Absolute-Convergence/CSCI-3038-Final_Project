@@ -17,6 +17,15 @@ class CandidateValidationError(ValueError):
     """Raised when a search proposal violates its declared parameter space."""
 
 
+def _is_finite_number(value: object) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except OverflowError:
+        return False
+
+
 def validate_candidate(
     candidate: CandidateConfiguration,
     contract: OptimizationContract,
@@ -64,9 +73,7 @@ def _validate_value(
         )
     elif definition.kind is ParameterKind.FLOAT:
         valid = (
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and math.isfinite(float(value))
+            _is_finite_number(value)
             and definition.minimum <= value <= definition.maximum
         )
         expected = (
@@ -74,7 +81,10 @@ def _validate_value(
             f"{definition.maximum}"
         )
     else:
-        valid = value in definition.choices
+        valid = any(
+            type(value) is type(choice) and value == choice
+            for choice in definition.choices
+        )
         expected = f"one of {definition.choices!r}"
 
     if not valid:

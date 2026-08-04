@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
+from time import monotonic
 
 from black_box_optimizer import runner
 from black_box_optimizer.candidate_validation import (
@@ -23,7 +24,11 @@ from black_box_optimizer.models import (
     WorkerSpec,
 )
 from black_box_optimizer.persistence import CheckpointError, RunDirectory
-from black_box_optimizer.records import TrialRecord, build_trial_record
+from black_box_optimizer.records import (
+    TrialRecord,
+    build_internal_error_record,
+    build_trial_record,
+)
 from black_box_optimizer.reporting import ReportingError, ResultReporter
 from black_box_optimizer.results import (
     OptimizationResult,
@@ -60,6 +65,7 @@ class ControllerState(StrEnum):
 _UNSAFE_TO_CANCEL_STATES = (
     ControllerState.EXECUTING,
     ControllerState.RECORDING,
+    ControllerState.FINALIZING,
 )
 
 
@@ -105,6 +111,7 @@ class ApplicationController:
         candidate: CandidateConfiguration | None = None
         metrics_path: Path | None = None
         execution_result: dict[str, object] | None = None
+        attempt_started_at: float | None = None
 
         try:
             while True:
@@ -138,6 +145,7 @@ class ApplicationController:
                         self._history.snapshot()
                     )
                     if decision.continue_execution:
+                        attempt_started_at = monotonic()
                         self.state = ControllerState.EXECUTING
                     else:
                         self.termination_reason = decision.termination_reason
@@ -149,14 +157,25 @@ class ApplicationController:
                             "EXECUTING reached without a candidate."
                         )
 
-                    metrics_path = self._run_directory.metrics_path(
-                        self._next_trial_id
-                    )
-
-                    execution_result = runner.execute(
-                        self._worker_spec, candidate, metrics_path
-                    )
-                    self.state = ControllerState.RECORDING
+                    try:
+                        metrics_path = self._run_directory.metrics_path(
+                            self._next_trial_id
+                        )
+                        execution_result = runner.execute(
+                            self._worker_spec, candidate, metrics_path
+                        )
+                    except Exception as error:
+                        self._record_internal_error(
+                            candidate,
+                            error,
+                            attempt_started_at,
+                        )
+                        candidate = None
+                        metrics_path = None
+                        execution_result = None
+                        attempt_started_at = None
+                    else:
+                        self.state = ControllerState.RECORDING
 
                 elif self.state is ControllerState.RECORDING:
                     if candidate is None:
@@ -172,12 +191,24 @@ class ApplicationController:
                             "RECORDING reached without an execution result."
                         )
 
-                    record = build_trial_record(
-                        candidate,
-                        self._next_trial_id,
-                        metrics_path,
-                        execution_result,
-                    )
+                    try:
+                        record = build_trial_record(
+                            candidate,
+                            self._next_trial_id,
+                            metrics_path,
+                            execution_result,
+                        )
+                    except Exception as error:
+                        self._record_internal_error(
+                            candidate,
+                            error,
+                            attempt_started_at,
+                        )
+                        candidate = None
+                        metrics_path = None
+                        execution_result = None
+                        attempt_started_at = None
+                        continue
                     self._history.append(record)
                     self._next_trial_id += 1
                     was_cancelled = record.execution_status == "cancelled"
@@ -189,6 +220,7 @@ class ApplicationController:
                     candidate = None
                     metrics_path = None
                     execution_result = None
+                    attempt_started_at = None
 
                     try:
                         self._run_directory.write_diagnostics(
@@ -292,3 +324,40 @@ class ApplicationController:
             raise
 
         self._reported = True
+
+    def _record_internal_error(
+        self,
+        candidate: CandidateConfiguration,
+        error: Exception,
+        attempt_started_at: float | None,
+    ) -> None:
+        """Preserve one authorized attempt before fatal finalization."""
+        runtime_seconds = (
+            max(0.0, monotonic() - attempt_started_at)
+            if attempt_started_at is not None
+            else 0.0
+        )
+        record = build_internal_error_record(
+            candidate,
+            self._next_trial_id,
+            self.state.value,
+            error,
+            runtime_seconds,
+        )
+        self._history.append(record)
+        self._next_trial_id += 1
+
+        try:
+            self._run_directory.write_diagnostics(
+                record.trial_id,
+                "",
+                "",
+            )
+            self._run_directory.checkpoint(
+                self._history.snapshot(), self._contract
+            )
+        except CheckpointError:
+            pass
+
+        self.termination_reason = "fatal_error"
+        self.state = ControllerState.FAILED

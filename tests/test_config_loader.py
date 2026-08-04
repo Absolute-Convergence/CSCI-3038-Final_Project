@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -299,6 +300,26 @@ class ConfigurationLoaderTests(unittest.TestCase):
             load_configuration("bad\x00path.json")
 
         self.assertTrue(caught.exception.issues[0].startswith("path:"))
+
+    def test_rejects_foreign_platform_absolute_worker_path(self) -> None:
+        document = self.valid_document()
+        worker = document["worker"]
+        assert isinstance(worker, dict)
+        foreign_path = (
+            "/usr/bin/python3"
+            if os.name == "nt"
+            else r"C:\Python313\python.exe"
+        )
+        worker["command"] = [foreign_path]
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "worker.command[0]: absolute path uses syntax for a different "
+            "operating system",
+            caught.exception.issues,
+        )
 
     def test_configuration_error_requires_at_least_one_issue(self) -> None:
         with self.assertRaises(ValueError):

@@ -227,6 +227,17 @@ class FoundationModelTests(unittest.TestCase):
                 maximum=1.0,
             )
 
+    def test_float_domain_rejects_huge_integer_bound_cleanly(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"float parameter bounds must be finite"
+        ):
+            ParameterDefinition(
+                name="learning_rate",
+                kind=ParameterKind.FLOAT,
+                minimum=0.0,
+                maximum=10**400,
+            )
+
     def test_float_domain_rejects_minimum_at_or_above_maximum(self) -> None:
         with self.assertRaisesRegex(
             ValueError, r"float minimum must be less than maximum"
@@ -398,6 +409,14 @@ class FoundationModelTests(unittest.TestCase):
                 timeout_seconds=1.0,
             )
 
+    def test_worker_spec_rejects_bare_metrics_argument_prefix(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"include a flag name"):
+            WorkerSpec(
+                command=("python",),
+                metrics_argument="--",
+                timeout_seconds=1.0,
+            )
+
     def test_worker_spec_rejects_non_numeric_timeout(self) -> None:
         with self.assertRaisesRegex(
             ValueError, r"timeout_seconds must be numeric"
@@ -416,6 +435,14 @@ class FoundationModelTests(unittest.TestCase):
                 command=("python", "worker.py"),
                 metrics_argument="--metrics-out",
                 timeout_seconds=math.inf,
+            )
+
+    def test_worker_spec_rejects_huge_integer_timeout_cleanly(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"must be finite"):
+            WorkerSpec(
+                command=("python",),
+                metrics_argument="--metrics-out",
+                timeout_seconds=10**400,
             )
 
     def test_worker_spec_rejects_non_positive_timeout(self) -> None:

@@ -106,6 +106,16 @@ class _FailingReporter:
         raise ReportingError("report failed")
 
 
+class _InterruptOnceReporter:
+    def __init__(self) -> None:
+        self.results = []
+
+    def write(self, result) -> None:
+        self.results.append(result)
+        if len(self.results) == 1:
+            raise KeyboardInterrupt
+
+
 class _InterruptedBeforeLaunchSearch:
     """Simulates Ctrl+C arriving while the controller is still selecting."""
 
@@ -336,6 +346,43 @@ class ControllerTerminationReasonTests(unittest.TestCase):
         # write should not erase the real in memory history
         self.assertEqual(len(controller.history), 1)
 
+    def test_trial_directory_failure_preserves_record_and_finalizes(
+        self,
+    ) -> None:
+        controller = ApplicationController(
+            make_contract(),
+            create_algorithm(AlgorithmSpec("random_search", seed=8)),
+            StopPolicyEvaluator(StopPolicy(max_trials=1)),
+            make_worker_spec(),
+            self.run_directory,
+            self.reporter,
+        )
+        real_trial_directory = self.run_directory.trial_directory
+        calls = 0
+
+        def fail_second_trial_directory(trial_id):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise CheckpointError("permission denied")
+            return real_trial_directory(trial_id)
+
+        with patch.object(
+            self.run_directory,
+            "trial_directory",
+            side_effect=fail_second_trial_directory,
+        ):
+            with patch(
+                "black_box_optimizer.runner.execute",
+                side_effect=_fake_completed_execute(),
+            ):
+                result = controller.run()
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.termination_reason, "fatal_error")
+        self.assertEqual(len(result.history), 1)
+        self.assertEqual(result.history[0].execution_status, "completed")
+
     def test_proposal_failed_becomes_fatal_error_via_failed_state(self) -> None:
         contract = make_contract()
         stop_policy = StopPolicyEvaluator(StopPolicy(max_trials=5))
@@ -486,6 +533,70 @@ class ControllerTerminationReasonTests(unittest.TestCase):
         self.assertEqual(len(controller.history), 0)
 
 
+class ControllerInternalErrorTests(unittest.TestCase):
+    """Every authorized attempt survives internal collaborator failures."""
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.run_directory = create_run_directory(self._tmpdir.name)
+        self.reporter = _RecordingReporter()
+
+    def make_controller(self) -> ApplicationController:
+        return ApplicationController(
+            make_contract(),
+            create_algorithm(AlgorithmSpec("random_search", seed=9)),
+            StopPolicyEvaluator(StopPolicy(max_trials=1)),
+            make_worker_spec(),
+            self.run_directory,
+            self.reporter,
+        )
+
+    def test_unexpected_runner_error_is_recorded_and_finalized(self) -> None:
+        controller = self.make_controller()
+
+        with patch(
+            "black_box_optimizer.runner.execute",
+            side_effect=RuntimeError("runner contract broke"),
+        ):
+            result = controller.run()
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.termination_reason, "fatal_error")
+        self.assertEqual(len(result.history), 1)
+        record = result.history[0]
+        self.assertEqual(record.execution_status, "internal_error")
+        self.assertEqual(record.metrics_status, "missing")
+        self.assertIn("runner contract broke", record.error_message)
+        self.assertTrue(
+            (self.run_directory.path / "history.csv").is_file()
+        )
+        history_text = (self.run_directory.path / "history.csv").read_text()
+        self.assertIn("internal_error", history_text)
+        self.assertEqual(result.pareto_count, 0)
+        self.assertIs(controller.run(), result)
+
+    def test_unexpected_record_factory_error_is_recorded(self) -> None:
+        controller = self.make_controller()
+
+        with patch(
+            "black_box_optimizer.runner.execute",
+            side_effect=_fake_completed_execute(),
+        ):
+            with patch(
+                "black_box_optimizer.controller.build_trial_record",
+                side_effect=KeyError("runtime_seconds"),
+            ):
+                result = controller.run()
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(len(result.history), 1)
+        record = result.history[0]
+        self.assertEqual(record.execution_status, "internal_error")
+        self.assertIn("KeyError", record.error_message)
+        self.assertIn("runtime_seconds", record.error_message)
+
+
 class ControllerFinalizeTests(unittest.TestCase):
     """Finalization builds one authoritative result and delegates reporting."""
 
@@ -531,6 +642,37 @@ class ControllerFinalizeTests(unittest.TestCase):
         self.assertEqual(controller.termination_reason, "fatal_error")
         self.assertIsNotNone(controller.result)
         self.assertEqual(controller.result.status, "failed")
+
+    def test_finalization_interrupt_preserves_result_and_retries(self) -> None:
+        reporter = _InterruptOnceReporter()
+        controller = ApplicationController(
+            make_contract(),
+            create_algorithm(AlgorithmSpec("random_search", seed=11)),
+            StopPolicyEvaluator(StopPolicy(max_trials=1)),
+            make_worker_spec(),
+            self.run_directory,
+            reporter,
+        )
+
+        with patch(
+            "black_box_optimizer.runner.execute",
+            side_effect=_fake_completed_execute(),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                controller.run()
+
+        first_result = controller.result
+        self.assertIsNotNone(first_result)
+        self.assertEqual(first_result.status, "completed")
+        self.assertEqual(first_result.termination_reason, "maximum_trials")
+        self.assertEqual(controller.state, ControllerState.FINALIZING)
+        self.assertEqual(reporter.results, [first_result])
+
+        repeated = controller.run()
+
+        self.assertIs(repeated, first_result)
+        self.assertEqual(reporter.results, [first_result, first_result])
+        self.assertEqual(controller.state, ControllerState.STOPPED)
 
     def test_calling_finalize_again_directly_is_a_no_op(self) -> None:
         # run() calling itself twice can't reach this: the second run()

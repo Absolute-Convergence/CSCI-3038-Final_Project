@@ -8,7 +8,11 @@ from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 from black_box_optimizer.models import CandidateConfiguration
-from black_box_optimizer.records import TrialRecord, build_trial_record
+from black_box_optimizer.records import (
+    TrialRecord,
+    build_internal_error_record,
+    build_trial_record,
+)
 
 
 class TrialRecordTests(unittest.TestCase):
@@ -37,6 +41,10 @@ class TrialRecordTests(unittest.TestCase):
 
     def test_execution_succeeded_false_when_not_completed(self) -> None:
         record = self.make_record(execution_status="timed_out")
+        self.assertFalse(record.execution_succeeded)
+
+    def test_internal_error_is_a_valid_unsuccessful_status(self) -> None:
+        record = self.make_record(execution_status="internal_error")
         self.assertFalse(record.execution_succeeded)
 
     # Tests that confirm a TrialRecord truly cannot be changed once built.
@@ -197,6 +205,39 @@ class BuildTrialRecordTests(unittest.TestCase):
         self.assertEqual(
             record.error_message, "Worker exceeded 120.0-second timeout"
         )
+
+    def test_internal_error_factory_preserves_authorized_attempt(self) -> None:
+        record = build_internal_error_record(
+            self.candidate,
+            4,
+            "executing",
+            RuntimeError("runner contract broke"),
+            0.25,
+        )
+
+        self.assertEqual(record.trial_id, 4)
+        self.assertEqual(record.parameters, self.candidate.parameters)
+        self.assertEqual(record.execution_status, "internal_error")
+        self.assertEqual(record.metrics_status, "missing")
+        self.assertEqual(record.metrics, {})
+        self.assertEqual(record.runtime_seconds, 0.25)
+        self.assertIsNone(record.exit_code)
+        self.assertFalse(record.timed_out)
+        self.assertIn(
+            "RuntimeError: runner contract broke",
+            record.error_message,
+        )
+
+    def test_internal_error_diagnostic_is_bounded(self) -> None:
+        record = build_internal_error_record(
+            self.candidate,
+            4,
+            "recording",
+            RuntimeError("x" * 2_000),
+            0.0,
+        )
+
+        self.assertEqual(len(record.error_message), 1_000)
 
 
 if __name__ == "__main__":

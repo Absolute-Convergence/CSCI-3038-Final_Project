@@ -61,7 +61,13 @@ class RunDirectory:
     def trial_directory(self, trial_id: int) -> Path:
         """Create, if needed, and return one trial's own directory."""
         directory = self._trials_path / self._trial_directory_name(trial_id)
-        directory.mkdir(parents=True, exist_ok=True)
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            raise CheckpointError(
+                f"Failed to create directory for trial_id {trial_id}: "
+                f"{error}"
+            ) from error
         return directory
 
     def metrics_path(self, trial_id: int) -> Path:
@@ -82,11 +88,13 @@ class RunDirectory:
         """Persist complete decoded worker streams in the trial directory."""
         if not isinstance(stdout, str) or not isinstance(stderr, str):
             raise TypeError("stdout and stderr must be strings")
-        directory = self.trial_directory(trial_id)
         try:
+            directory = self.trial_directory(trial_id)
             _atomic_write_text(directory / "stdout.txt", stdout)
             _atomic_write_text(directory / "stderr.txt", stderr)
-        except OSError as error:
+        except CheckpointError:
+            raise
+        except Exception as error:
             raise CheckpointError(
                 f"Failed to persist diagnostics for trial_id {trial_id}: "
                 f"{error}"
@@ -111,9 +119,21 @@ class RunDirectory:
         destination = self._path / "history.csv"
         fieldnames = _build_fieldnames(history, contract)
 
-        fd, temp_name = tempfile.mkstemp(
-            dir=self._path, prefix="history.", suffix=".csv.tmp"
+        trial_note = (
+            f" (most recent trial_id: {history[-1].trial_id})"
+            if history
+            else ""
         )
+        try:
+            fd, temp_name = tempfile.mkstemp(
+                dir=self._path, prefix="history.", suffix=".csv.tmp"
+            )
+        except OSError as error:
+            raise CheckpointError(
+                "Failed to create a temporary history checkpoint"
+                f"{trial_note}: {error}"
+            ) from error
+
         try:
             with os.fdopen(fd, "w", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -126,23 +146,16 @@ class RunDirectory:
 
             os.replace(temp_name, destination)
 
-        except OSError as error:
-            Path(temp_name).unlink(missing_ok=True)
-
-            # TDS section 10 4 wants the trial identifier included when
-            # one has already been assigned
-            # The last record is the one appended before this checkpoint
-            trial_note = (
-                f" (most recent trial_id: {history[-1].trial_id})"
-                if history
-                else ""
-            )
-
+        except Exception as error:
+            _remove_temporary_file(temp_name)
             raise CheckpointError(
                 "Failed to checkpoint history.csv; the previously "
                 f"committed file (if any) was retained{trial_note}: "
                 f"{error}"
             ) from error
+        except BaseException:
+            _remove_temporary_file(temp_name)
+            raise
 
     @staticmethod
     def _trial_directory_name(trial_id: int) -> str:
@@ -248,6 +261,13 @@ def _atomic_write_text(destination: Path, content: str) -> None:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
             stream.write(content)
         os.replace(temporary_name, destination)
-    except OSError:
-        Path(temporary_name).unlink(missing_ok=True)
+    except BaseException:
+        _remove_temporary_file(temporary_name)
         raise
+
+
+def _remove_temporary_file(path: str | Path) -> None:
+    try:
+        Path(path).unlink(missing_ok=True)
+    except OSError:
+        pass

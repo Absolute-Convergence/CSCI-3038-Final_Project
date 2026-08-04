@@ -154,6 +154,14 @@ class TrialPathTests(unittest.TestCase):
         # metrics_path creates the directory but not the file itself
         self.assertFalse(path.exists())
 
+    def test_trial_directory_failure_is_a_checkpoint_error(self) -> None:
+        with patch(
+            "black_box_optimizer.persistence.Path.mkdir",
+            side_effect=OSError("permission denied"),
+        ):
+            with self.assertRaisesRegex(CheckpointError, "trial_id 3"):
+                self.run_directory.trial_directory(3)
+
 
 class DiagnosticPersistenceTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -195,6 +203,24 @@ class DiagnosticPersistenceTests(unittest.TestCase):
 
         directory = self.run_directory.trial_directory(4)
         self.assertEqual(tuple(directory.glob("*.tmp")), ())
+
+    def test_trial_directory_failure_is_translated(self) -> None:
+        with patch(
+            "black_box_optimizer.persistence.Path.mkdir",
+            side_effect=OSError("permission denied"),
+        ):
+            with self.assertRaisesRegex(CheckpointError, "trial_id 4"):
+                self.run_directory.write_diagnostics(4, "out", "err")
+
+    def test_non_oserror_diagnostic_failure_is_translated(self) -> None:
+        with patch(
+            "black_box_optimizer.persistence._atomic_write_text",
+            side_effect=ValueError("encoding boundary failed"),
+        ):
+            with self.assertRaisesRegex(
+                CheckpointError, "encoding boundary failed"
+            ):
+                self.run_directory.write_diagnostics(4, "out", "err")
 
     def test_non_string_streams_are_rejected(self) -> None:
         with self.assertRaisesRegex(TypeError, "must be strings"):
@@ -382,6 +408,26 @@ class CheckpointTests(unittest.TestCase):
         leftovers = list(self.run_directory.path.glob("*.tmp"))
 
         self.assertEqual(leftovers, [])
+
+    def test_non_oserror_is_wrapped_and_cleans_temp_file(self) -> None:
+        malformed = TrialRecord(
+            trial_id=0,
+            parameters={"learning_rate": 0.05},
+            metrics={"accuracy": 0.9, "loss": 0.1},
+            execution_status="completed",
+            metrics_status="valid",
+            runtime_seconds=0.1,
+            exit_code=0,
+            timed_out=False,
+        )
+
+        with self.assertRaisesRegex(CheckpointError, "batch_size"):
+            self.run_directory.checkpoint([malformed], self.contract)
+
+        self.assertEqual(
+            tuple(self.run_directory.path.glob("*.tmp")),
+            (),
+        )
 
     def test_failure_message_names_the_most_recent_trial_id(self) -> None:
         # TDS section 10 4 wants the assigned trial identifier included

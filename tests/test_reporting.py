@@ -231,6 +231,40 @@ class ReporterTests(unittest.TestCase):
             (),
         )
 
+    def test_report_group_is_explicitly_not_transactional(self) -> None:
+        record = make_record(0, score=0.9, cost=0.2, time_value=0.8)
+        result = build_optimization_result(
+            (record,),
+            self.configuration.optimization,
+            "maximum_trials",
+        )
+        real_replace = os.replace
+
+        def fail_summary(source, destination):
+            if Path(destination).name == "summary.txt":
+                raise OSError("disk unavailable")
+            return real_replace(source, destination)
+
+        with patch(
+            "black_box_optimizer.reporting.os.replace",
+            side_effect=fail_summary,
+        ):
+            with self.assertRaises(ReportingError):
+                self.reporter.write(result)
+
+        self.assertTrue(
+            (self.run_directory.path / "resolved_config.json").is_file()
+        )
+        self.assertTrue(
+            (self.run_directory.path / "pareto_front.csv").is_file()
+        )
+        self.assertFalse(
+            (self.run_directory.path / "summary.txt").exists()
+        )
+        self.assertFalse(
+            (self.run_directory.path / "pareto_front.png").exists()
+        )
+
     def test_constructor_rejects_a_non_project_configuration(self) -> None:
         with self.assertRaisesRegex(TypeError, "ProjectConfiguration"):
             Reporter("not a configuration", self.run_directory)

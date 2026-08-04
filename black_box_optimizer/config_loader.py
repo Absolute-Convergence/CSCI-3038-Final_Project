@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Callable, Iterable
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TypeVar
 
 from black_box_optimizer.models import (
@@ -128,7 +128,7 @@ def _read_json(path: Path) -> object:
             f"column {error.colno}"
         )
         raise ConfigurationError((issue,)) from error
-    except (OSError, UnicodeError) as error:
+    except (OSError, UnicodeError, ValueError) as error:
         raise ConfigurationError((f"path: {error}",)) from error
 
 
@@ -180,10 +180,17 @@ def _build_worker(
         issues.append("worker.command: every item must be a string")
         return None
 
-    resolved_command = tuple(
-        _resolve_command_part(part, configuration_directory)
-        for part in command
-    )
+    resolved_parts: list[str] = []
+    for index, part in enumerate(command):
+        try:
+            resolved_parts.append(
+                _resolve_command_part(part, configuration_directory)
+            )
+        except (OSError, ValueError) as error:
+            issues.append(f"worker.command[{index}]: {error}")
+    if len(resolved_parts) != len(command):
+        return None
+    resolved_command = tuple(resolved_parts)
     metrics_argument = section["metrics_argument"]
     timeout_seconds = section["timeout_seconds"]
     return _construct(
@@ -199,6 +206,14 @@ def _build_worker(
 
 def _resolve_command_part(part: str, configuration_directory: Path) -> str:
     path = Path(part)
+    foreign_absolute = (
+        PureWindowsPath(part).is_absolute()
+        or PurePosixPath(part).is_absolute()
+    ) and not path.is_absolute()
+    if foreign_absolute:
+        raise ValueError(
+            "absolute path uses syntax for a different operating system"
+        )
     is_path = (
         path.is_absolute()
         or len(path.parts) > 1

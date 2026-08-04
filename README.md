@@ -295,6 +295,12 @@ because these are local, generated run artifacts rather than source files.
 Every invocation owns a new unique run directory, a fresh history, and a
 Pareto front derived only from that run.
 
+Atomicity is guaranteed per file, including every `history.csv` checkpoint
+and each final report replacement. The collection of final report files is not
+a single transaction: if reporting fails, the command exits nonzero and files
+already committed remain valid individually, but the report collection is
+incomplete and must not be treated as a completed bundle.
+
 Normal completion and a no-eligible-trials result exit with code 0. Fatal
 failure exits with code 1, invalid initialization/configuration exits with code
 2, and user cancellation exits with code 130.
