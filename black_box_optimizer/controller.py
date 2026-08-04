@@ -8,6 +8,7 @@ implementation of those collaborators.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 from time import monotonic
@@ -80,6 +81,8 @@ class ApplicationController:
         worker_spec: WorkerSpec,
         run_directory: RunDirectory,
         reporter: ResultReporter,
+        # EMILY ADDITION FOR BEAUTIFICATION PURPOSES
+        on_trial_complete: Callable[[TrialRecord], None] | None = None,
     ) -> None:
         self._contract = contract
         self._algorithm = algorithm
@@ -87,6 +90,7 @@ class ApplicationController:
         self._worker_spec = worker_spec
         self._run_directory = run_directory
         self._reporter = reporter
+        self._on_trial_complete = on_trial_complete
 
         self._history = TrialHistory()
         self._next_trial_id = 0
@@ -211,6 +215,8 @@ class ApplicationController:
                         continue
                     self._history.append(record)
                     self._next_trial_id += 1
+                    if self._on_trial_complete is not None:
+                        self._on_trial_complete(record)
                     was_cancelled = record.execution_status == "cancelled"
                     stdout = execution_result.get("stdout", "")
                     stderr = execution_result.get("stderr", "")
@@ -346,6 +352,8 @@ class ApplicationController:
         )
         self._history.append(record)
         self._next_trial_id += 1
+        if self._on_trial_complete is not None:
+            self._on_trial_complete(record)
 
         try:
             self._run_directory.write_diagnostics(

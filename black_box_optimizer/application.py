@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from black_box_optimizer.config_loader import load_configuration
 from black_box_optimizer.controller import ApplicationController
 from black_box_optimizer.models import ProjectConfiguration
 from black_box_optimizer.persistence import RunDirectory, create_run_directory
+from black_box_optimizer.records import TrialRecord
 from black_box_optimizer.reporting import Reporter
 from black_box_optimizer.results import OptimizationResult
 from black_box_optimizer.search.registry import create_algorithm
@@ -30,6 +32,8 @@ class ApplicationSession:
 def initialize_application(
     configuration_path: str | Path,
     output_directory: str | Path,
+    # EMILY ADDITION FOR BEAUTIFICATION PURPOSES
+    on_trial_complete: Callable[[TrialRecord], None] | None = None,
 ) -> ApplicationSession:
     """Validate configuration, create outputs, and compose the controller."""
     configuration = load_configuration(configuration_path)
@@ -45,6 +49,7 @@ def initialize_application(
         worker_spec=configuration.worker,
         run_directory=run_directory,
         reporter=reporter,
+        on_trial_complete=on_trial_complete,
     )
     return ApplicationSession(
         configuration=configuration,

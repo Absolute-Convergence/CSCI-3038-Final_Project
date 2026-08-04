@@ -9,9 +9,37 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from black_box_optimizer.cli import _build_parser, main
+from black_box_optimizer.cli import _build_parser, _ProgressReporter, main
 from black_box_optimizer.config_loader import ConfigurationError
+from black_box_optimizer.models import (
+    Direction,
+    Objective,
+    OptimizationContract,
+    ParameterDefinition,
+    ParameterKind,
+)
+from black_box_optimizer.records import TrialRecord
 from black_box_optimizer.reporting import ReportingError
+
+
+def make_record(
+    trial_id: int,
+    execution_status: str = "completed",
+    metrics_status: str = "valid",
+    metrics: dict | None = None,
+    error_message: str | None = None,
+) -> TrialRecord:
+    return TrialRecord(
+        trial_id=trial_id,
+        parameters={},
+        metrics={} if metrics is None else metrics,
+        execution_status=execution_status,
+        metrics_status=metrics_status,
+        runtime_seconds=1.0,
+        exit_code=0 if execution_status == "completed" else 1,
+        timed_out=execution_status == "timed_out",
+        error_message=error_message,
+    )
 
 
 def make_session(status: str, termination_reason: str):
@@ -21,7 +49,12 @@ def make_session(status: str, termination_reason: str):
         attempted_count=2,
         pareto_count=1,
     )
+    configuration = SimpleNamespace(
+        stop_policy=SimpleNamespace(max_trials=2),
+        optimization=SimpleNamespace(objectives=()),
+    )
     return SimpleNamespace(
+        configuration=configuration,
         run_directory=SimpleNamespace(path=Path("run-output")),
         run=Mock(return_value=result),
     )
