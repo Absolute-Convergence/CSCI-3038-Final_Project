@@ -182,6 +182,15 @@ the next person can resume without reconstructing recent decisions.
   verified core-package support boundary; the GUI and PyTorch Iris example
   remain outside that claim. PR #27 run 30875134859 also passes all four jobs
   with the GUI regressions present in the source test tree.
-- Next work: Continue the TestPyPI and production PyPI gates in
+- TestPyPI gate: Fresh v0.1.1 wheel and source archives built from release
+  candidate `d34d6cc` passed `twine check` and were published to TestPyPI. The
+  published SHA-256 digests exactly match the local artifacts. A fresh Python
+  3.13.14 environment installed the package from TestPyPI and dependencies
+  from production PyPI, passed `pip check`, exposed both installed commands,
+  contained no PyTorch, and completed a four-trial synthetic run from outside
+  the checkout with four valid, Pareto-eligible records and all required
+  reports.
+- Next work: Create the v0.1.1 Git tag and GitHub release from the verified
+  commit, then continue the production PyPI gates in
   `docs/package-release-checklist.md`; the optional GUI fix does not block
   package publication.

@@ -88,11 +88,11 @@ does not declare Pillow as a GUI dependency in its package metadata.
 - [x] Open a pull request and require the Windows, Ubuntu, macOS, and package
   jobs in `.github/workflows/package.yml` to pass. Each operating-system job
   must install the exact wheel uploaded by the package job.
-- [ ] Build fresh archives from the exact release commit.
-- [ ] Inspect archive contents and rerun `python -m twine check dist/*`.
-- [ ] Upload to TestPyPI and install v0.1.1 into a fresh Python 3.13.14
+- [x] Build fresh archives from the exact release commit.
+- [x] Inspect archive contents and rerun `python -m twine check dist/*`.
+- [x] Upload to TestPyPI and install v0.1.1 into a fresh Python 3.13.14
   environment using only that index plus the public dependency index.
-- [ ] Run the installed command and synthetic worker from outside the source
+- [x] Run the installed command and synthetic worker from outside the source
   checkout.
 - [ ] Create the v0.1.1 Git tag and GitHub release from the verified commit.
 - [ ] Upload the exact TestPyPI-validated archives to production PyPI.
