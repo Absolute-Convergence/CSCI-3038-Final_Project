@@ -130,12 +130,10 @@ the next person can resume without reconstructing recent decisions.
   the optional GUI or PyTorch Iris example. Package and exact-wheel core jobs
   pass on `windows-latest`, `ubuntu-latest`, and `macos-latest` under Python
   3.13.14.
-- GUI follow-up: Branch
-  `work/2026-08-03-2226-gui-open-folder-integration` preserves Emily's
-  `8f1e2a7` fix for the Windows-only results-folder callback. It uses
-  nonblocking platform launchers and adds focused Windows, macOS, Linux, and
-  failure-path tests. This remains an optional-GUI fix, not a change to the
-  core package compatibility boundary.
+- GUI follow-up: PR #26 preserves Emily's `8f1e2a7` fix for the Windows-only
+  results-folder callback. Follow-up PR #27 uses nonblocking platform launchers
+  and adds focused Windows, macOS, Linux, and failure-path tests. This remains
+  an optional-GUI fix, not a change to the core package compatibility boundary.
 - Search-efficacy benchmark: The ZDT1 comparison harness now accepts
   `--seeds`, `--trials-per-run`, and `--output-dir`. Its default is 10 seeds x
   500 trials x 2 algorithms, or 10,000 real sequential worker subprocesses.
@@ -182,6 +180,8 @@ the next person can resume without reconstructing recent decisions.
   plus post-merge run 30873088864, passed the build-distributions job and the
   exact-wheel core jobs on all three operating systems. The README records the
   verified core-package support boundary; the GUI and PyTorch Iris example
-  remain outside that claim.
-- Next work: Verify and integrate the GUI follow-up, then continue the
-  TestPyPI and production PyPI gates in `docs/package-release-checklist.md`.
+  remain outside that claim. PR #27 run 30875134859 also passes all four jobs
+  with the GUI regressions present in the source test tree.
+- Next work: Continue the TestPyPI and production PyPI gates in
+  `docs/package-release-checklist.md`; the optional GUI fix does not block
+  package publication.
