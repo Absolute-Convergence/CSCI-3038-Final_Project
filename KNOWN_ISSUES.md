@@ -9,15 +9,21 @@ No confirmed defects remain open at the package-release remediation checkpoint.
 
 ## Resolved
 
-### The GUI results-folder button called a Windows-only API
+### Hyperloop's "Open Results Folder" button crashed on macOS and Linux
 
-The optional GUI used `os.startfile()` unconditionally after an optimization
-completed, raising `AttributeError` on macOS and Linux. The folder launcher now
-dispatches to `os.startfile` on Windows, `open` on macOS, and `xdg-open` on
-Linux. macOS and Linux launchers use nonblocking argument-list subprocesses;
-failure leaves the results intact and reports their resolved location. Focused
-tests cover all three platform branches and launcher failure. The GUI remains
-outside the separately verified core-package compatibility boundary.
+`os.startfile()` only exists on Windows. Clicking "Open Results Folder"
+after a successful run raised an unhandled `AttributeError` on macOS/Linux,
+so a genuinely completed optimization (real `history.csv`, `pareto_front.png`,
+etc. already on disk) looked like it had produced nothing. `Hyperloop.py`
+now dispatches on `sys.platform`: `os.startfile()` on Windows (unchanged
+from before), `open` on macOS, `xdg-open` on Linux, wrapped so a failure
+shows a dialog pointing at the results directory instead of crashing.
+Verified for real on macOS and on a real Windows machine before merging.
+PR #26 corrected the platform dispatch. The follow-up uses nonblocking
+argument-list subprocesses with `shell=False`, resolves the reported folder
+location, and adds focused Windows, macOS, Linux, and launcher-failure tests.
+The GUI remains outside the separately verified core-package compatibility
+boundary.
 
 ### Invalid configuration paths leaked a raw `ValueError` on Windows
 
