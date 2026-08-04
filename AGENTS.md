@@ -173,12 +173,14 @@ the next person can resume without reconstructing recent decisions.
   and source archive, uploads that exact distribution bundle, and requires the
   Windows, Ubuntu, and macOS jobs to install the uploaded wheel before running
   the core-compatible suite, dependency check, hygiene check, and installed
-  synthetic-worker smoke test. Hosted-runner results remain pending until the
-  branch is pushed and its pull request jobs complete. After this workflow
-  change, all 394 tests, the 62-file hygiene check, a fresh wheel/sdist build,
-  `twine check`, and the workflow's exact-wheel selection command pass locally.
-- Next work: Push this branch, open its pull request, and require the package,
-  Windows, Ubuntu, and macOS jobs to pass. After hosted verification, record
-  the support claim and build the final archives from the exact release commit.
-  The remaining release gates are recorded in
-  `docs/package-release-checklist.md`.
+  synthetic-worker smoke test. After this workflow change, all 394 tests, the
+  62-file hygiene check, a fresh wheel/sdist build, `twine check`, and the
+  workflow's exact-wheel selection command pass locally. PR #25 Actions run
+  30872868748 then passed the build-distributions job and
+  the exact-wheel core jobs on `windows-latest`, `ubuntu-latest`, and
+  `macos-latest`. The README now records the verified core-package support
+  boundary; the GUI and PyTorch Iris example remain outside that claim.
+- Next work: Require the documentation commit's final hosted matrix to pass,
+  merge PR #25 without squashing, create the repository checkpoint, and build
+  fresh archives from the exact release commit. The remaining publication
+  gates are recorded in `docs/package-release-checklist.md`.

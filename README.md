@@ -325,10 +325,12 @@ Normal completion and a no-eligible-trials result exit with code 0. Fatal
 failure exits with code 1, invalid initialization/configuration exits with code
 2, and user cancellation exits with code 130.
 
-The core is locally verified on Windows. Automated core-package gates are
-configured for Windows, Ubuntu, and macOS; support for all three should be
-claimed only after those GitHub Actions jobs pass. The optional Tkinter GUI is
-outside that package compatibility claim.
+The Hyperloop core package is verified on Python 3.13.14 with GitHub-hosted
+Windows, Ubuntu, and macOS runners. Each platform installs the same validated
+wheel before running the core-compatible test suite, dependency validation,
+source hygiene check, and installed synthetic-worker smoke test. The optional
+Tkinter GUI and PyTorch Iris example are outside that package compatibility
+claim.
 
 ## MVP Boundaries
 

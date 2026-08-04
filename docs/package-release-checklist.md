@@ -85,7 +85,7 @@ does not declare Pillow as a GUI dependency in its package metadata.
   only per-file atomicity.
 - [x] Run the final complete suite with PyTorch installed.
 - [x] Run the repository source-hygiene checker after the last change.
-- [ ] Open a pull request and require the Windows, Ubuntu, macOS, and package
+- [x] Open a pull request and require the Windows, Ubuntu, macOS, and package
   jobs in `.github/workflows/package.yml` to pass. Each operating-system job
   must install the exact wheel uploaded by the package job.
 - [ ] Build fresh archives from the exact release commit.
