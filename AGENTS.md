@@ -161,8 +161,11 @@ the next person can resume without reconstructing recent decisions.
   test into `main` as merge commit `7f5b0c4`. PR #21
   (`work/2026-08-03-1810-zdt1-benchmark`) merged the ZDT1 benchmark worker,
   the comparison script, and a 12-test suite for the ZDT1 formula and
-  hypervolume math into `main` as merge commit `fc5121a`. Both working
-  branches deleted locally and remotely per convention.
+  hypervolume math into `main` as merge commit `fc5121a`. PR #22
+  (`work/2026-08-03-1903-test-bug-audit`) merged a coverage-closing pass
+  (91% -> 99% overall, 80 new tests, 363 total) into `main` as merge commit
+  `d72d3c9`. All three working branches deleted locally and remotely per
+  convention.
 - Decisions: NSGA-II is hand-implemented rather than depending on pymoo --
   pymoo's primary API assumes ownership of the evaluation loop (batch
   `minimize()`), doesn't fit this project's one-worker-at-a-time controller,
@@ -181,24 +184,41 @@ the next person can resume without reconstructing recent decisions.
   than nudging toward a better one). Generated comparison output (raw CSV,
   chart) is gitignored under `examples/zdt1_benchmark/comparison_results/`
   as regenerable evidence, same treatment as `/runs/`.
-- Verification: All 283 tests pass under Python 3.13.14 (the course-required
+- Verification: All 363 tests pass under Python 3.13.14 (the course-required
   interpreter; `.venv` was rebuilt from a stray 3.14.6 install during the
-  NSGA-II checkpoint and has stayed on 3.13.14 since). `nsga2.py` has 100%
-  line and branch coverage under `coverage.py` (a local dev install, not a
-  project dependency). The hygiene checker passes across 60 source files
-  with non-blocking line-length advisories in `nsga2.py` (3 lines),
-  `tests/test_nsga2.py` (2 lines), `compare_search_algorithms.py` (2 lines),
-  `tests/test_zdt1_benchmark.py` (1 line), and `Hyperloop.py` (26 lines,
-  pre-existing and unrelated to this work). A real 5-seed x 500-trial x
-  2-algorithm ZDT1 comparison (5,000 real subprocess trials) ran
-  successfully: NSGA2 averaged 64% more hypervolume than random_search
-  (0.389 vs 0.237, as a fraction of the true-optimal hypervolume: 44.4% vs
-  27.0%) and was more than twice as consistent run to run (stdev 0.069 vs
-  0.157).
-- Next work: Nothing queued. Possible directions if picked back up: a
-  harder real-worker benchmark (Iris's objectives are too correlated to
-  exercise Pareto diversity), parallel trial execution (a genuine
-  architecture change to `controller.py`'s one-worker-at-a-time loop, not
-  yet approved), or NSGA-II elitism (combining parent and offspring
-  populations before selection, the biggest remaining gap versus canonical
-  NSGA-II per its design doc).
+  NSGA-II checkpoint and has stayed on 3.13.14 since). Overall package
+  coverage is 99% (1385 statements / 452 branches; 20 of 22 source files at
+  100%) after a dedicated coverage-closing pass, verified with `coverage.py`
+  (a local dev install, not a project dependency) -- see the prior
+  checkpoint's notes for the two files that stay short of 100% and why
+  (`__main__.py`'s subprocess-tracing gap, `controller.py`'s two genuinely
+  unreachable RECORDING guards). The hygiene checker passes across 60
+  source files with the same non-blocking line-length advisories as before.
+  A real 5-seed x 500-trial x 2-algorithm ZDT1 comparison (5,000 real
+  subprocess trials) ran successfully: NSGA2 averaged 64% more hypervolume
+  than random_search (0.389 vs 0.237, as a fraction of the true-optimal
+  hypervolume: 44.4% vs 27.0%) and was more than twice as consistent run to
+  run (stdev 0.069 vs 0.157).
+- A separate, dedicated adversarial bug-hunt pass (six parallel reviewers,
+  one per module cluster, run immediately after the coverage pass above
+  reached 99% with no bugs found) found 11 real, independently-reproduced
+  bugs and 4 test-quality gaps that coverage alone never surfaces. Full
+  details, each with a concrete repro, are now recorded in
+  `KNOWN_ISSUES.md`'s Open section -- read that file before starting the
+  next branch instead of re-deriving this list. Two are critical
+  (`AlgorithmSpec` accepts a negative seed and crashes the CLI with an
+  unhandled traceback instead of a clean exit code; a `KeyboardInterrupt`
+  during report-writing mislabels a genuinely completed run as
+  "cancelled"). None of the 11 have been fixed yet -- this was a find-only
+  pass, no source code was changed.
+- Next work: Fix the bugs in `KNOWN_ISSUES.md`'s Open section, starting
+  with the two critical ones (negative-seed CLI crash, KeyboardInterrupt
+  mislabeling a completed run as cancelled), on a new
+  `work/YYYY-MM-DD-HHmm-bug-hunt`-style branch. Once those land, older
+  possible directions if picked back up: a harder real-worker benchmark
+  (Iris's objectives are too correlated to exercise Pareto diversity),
+  parallel trial execution (a genuine architecture change to
+  `controller.py`'s one-worker-at-a-time loop, not yet approved), or
+  NSGA-II elitism (combining parent and offspring populations before
+  selection, the biggest remaining gap versus canonical NSGA-II per its
+  design doc).
