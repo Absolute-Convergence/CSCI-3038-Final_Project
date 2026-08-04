@@ -119,6 +119,11 @@ class ApplicationController:
 
         try:
             while True:
+
+                cancel_event = getattr(self, "cancel_event", None)
+                if cancel_event is not None and cancel_event.is_set():
+                    raise KeyboardInterrupt
+                
                 if self.state is ControllerState.SELECTING:
                     proposal = self._algorithm.propose(
                         self._contract, self._history.snapshot()

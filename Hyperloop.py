@@ -96,10 +96,12 @@ class ConfigApp:
     def __init__(self, root):
         self.root = root
         self.root.title("HyperLoop")
-        self.root.geometry("620x700")
+        self.root.geometry("620x710")
         self.app_icon = set_icon(os.path.join("assets", "img", "HyperLoop.png"))
         if self.app_icon:
             self.root.iconphoto(False, self.app_icon)
+        self.stop_requested = threading.Event()
+        self.last_result = None
         
         # Main Scrollable Canvas
         canvas = tk.Canvas(root)
@@ -277,12 +279,17 @@ class ConfigApp:
         
         preview_btn = ttk.Button(actions_frame, text="Preview JSON", command=self.generate_json)
         preview_btn.pack(side="left", expand=True, fill="x", padx=2)
+
+        # Allows user to save a copy of the JSON file to their local machine. 
         
-        save_btn = ttk.Button(actions_frame, text="Save Json File", command=self.save_json_to_folder)
-        save_btn.pack(side="left", expand=True, fill="x", padx=2)
+        # save_btn = ttk.Button(actions_frame, text="Save Json File", command=self.save_json_to_folder)
+        # save_btn.pack(side="left", expand=True, fill="x", padx=2)
+
+        self.stop_btn = ttk.Button(actions_frame, text="Stop", command=self.stop_optimizer, state="disabled")
+        self.stop_btn.pack(side="left", expand=True, fill="x", padx=2)
 
         self.go_btn = ttk.Button(actions_frame, text="Do the thing", command=self.run_loop)
-        self.go_btn.pack(side="bottom", expand=True, fill="x", padx=2)
+        self.go_btn.pack(side="left", expand=True, fill="x", padx=2)
 
         
     def build_config_dict(self):
@@ -412,7 +419,9 @@ class ConfigApp:
 
     def run_loop(self):
         """Save the configuration and launch the optimizer."""
-        
+
+        self.stop_requested.clear()
+
         try:
             config = self.build_config_dict()
 
@@ -454,6 +463,7 @@ class ConfigApp:
 
             # Disable btn once config is built
             self.go_btn.config(state="disabled")
+            self.stop_btn.config(state="normal")
 
             # Launch optimizer
             self.worker_thread = threading.Thread(
@@ -464,11 +474,11 @@ class ConfigApp:
 
             self.worker_thread.start()
 
-            messagebox.showinfo(
-                "Optimizer Started",
-                f"Configuration saved to:\n{config_path}\n\n"
-                f"Output directory:\n{output_dir}"
-            )
+            # messagebox.showinfo(
+            #     "Optimizer Started",
+            #     f"Configuration saved to:\n{config_path}\n\n"
+            #     f"Output directory:\n{output_dir}"
+            # )
 
         except Exception as e:
             messagebox.showerror("Error", str(e))
@@ -480,6 +490,8 @@ class ConfigApp:
                 output_directory=output_dir,
             )
 
+            app.controller.cancel_event = self.stop_requested
+
             result = app.run()
             self.last_result = result
 
@@ -490,18 +502,30 @@ class ConfigApp:
 
             return result
 
+        except KeyboardInterrupt:
+            self.root.after(
+                0,
+                lambda: self.optimizer_cancelled(output_dir),
+            )
+        
         except Exception as e:
             self.root.after(
                 0,
                 lambda: self.optimizer_failed(e)
             )
 
+    def stop_optimizer(self):
+        self.stop_requested.set()
+
     def optimizer_finished(self, output_dir):
+
         """Display a summary when the optimizer finishes."""
 
         self.go_btn.config(state="normal")
+        self.stop_btn.config(state="disabled")
 
         self.last_output_dir = Path(output_dir)
+
 
         window = tk.Toplevel(self.root)
         window.title("Optimization Complete")
@@ -543,8 +567,43 @@ class ConfigApp:
             command=window.destroy,
         ).pack(side="right", padx=5)
 
+    def optimizer_cancelled(self, output_dir):
+        self.go_btn.config(state="normal")
+        self.stop_btn.config(state="disabled")
+
+        window = tk.Toplevel(self.root)
+        window.title("Optimization Stopped")
+        window.iconphoto(False, self.app_icon)
+
+        frame = ttk.Frame(window, padding=20)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(
+            frame,
+            text="⏹ Optimization Stopped",
+            font=("Segoe UI", 14, "bold"),
+        ).pack(anchor="w", pady=(0, 15))
+
+        ttk.Label(
+            frame,
+            text="The optimization was stopped by the user.",
+        ).pack(anchor="w")
+
+        ttk.Button(
+            frame,
+            text="Open Results Folder",
+            command=lambda: _open_folder(output_dir),
+        ).pack(side="left", padx=5)
+
+        ttk.Button(
+            frame,
+            text="Close",
+            command=window.destroy,
+        ).pack(side="right", padx=5)
+
     def optimizer_failed(self, error):
         self.go_btn.config(state="normal")
+        self.stop_btn.config(state="disabled")
 
         messagebox.showerror(
             "Optimizer Error",
