@@ -190,6 +190,8 @@ class AlgorithmSpec:
             raise ValueError("algorithm name must be a nonempty string")
         if isinstance(self.seed, bool) or not isinstance(self.seed, int):
             raise ValueError("seed must be an integer")
+        if self.seed < 0:
+            raise ValueError("seed cannot be negative")
 
 
 @dataclass(frozen=True, slots=True)
