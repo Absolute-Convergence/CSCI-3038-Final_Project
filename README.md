@@ -131,9 +131,14 @@ CSCI-3038-Final_Project/
 |   |   |-- iris_config.json          # implemented example configuration
 |   |   |-- iris-data.csv             # implemented bundled Iris dataset
 |   |   `-- iris_worker.py            # external PyTorch worker
-|   `-- zdt1_benchmark/
-|       |-- synthetic_config.json     # dependency-free smoke-test config
-|       `-- compare_search_algorithms.py
+|   |-- zdt1_benchmark/
+|   |   |-- synthetic_config.json     # dependency-free smoke-test config
+|   |   `-- compare_search_algorithms.py
+|   `-- paper_airplane/
+|       |-- __init__.py               # package marker
+|       |-- paper_airplane_config.json       # example configuration (Windows)
+|       |-- paper_airplane_config_unix.json  # same example, macOS/Linux worker command
+|       `-- paper_airplane_worker.py  # fun demo worker, known-optimal Pareto front
 |-- tests/
 |   |-- test_models.py                # implemented foundation-model tests
 |   |-- test_metrics.py               # implemented metrics-parser tests
