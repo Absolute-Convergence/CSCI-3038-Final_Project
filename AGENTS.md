@@ -123,15 +123,19 @@ Keep this section brief and current. Update it after every repository change so
 the next person can resume without reconstructing recent decisions.
 
 - Last updated: 2026-08-03
-- Current state: Package preparation is active on
-  `work/2026-08-03-1923-package-release-audit`. The branch integrates
-  `origin/main` through `f9c9e64` and the local package checkpoint
-  `beaefa7`. `pyproject.toml` targets distribution
-  `hyperloop-optimizer` version 0.1.1. The approved installed commands are
-  `hyperloop-optimizer` and `hyperloop-synthetic-worker`; the existing
-  module CLI remains available. The wheel contains the optimizer core and the
-  dependency-free synthetic worker, while the Iris worker, GUI, tests, and
-  class-project material remain outside the installed package.
+- Current state: PR #25 merged the v0.1.1 package preparation to `main` at
+  `b0c5818`; checkpoint
+  `checkpoint/main-hyperloop-v0.1.1-package-2026-08-03-2155` records it. The
+  wheel contains the optimizer core and dependency-free synthetic worker, not
+  the optional GUI or PyTorch Iris example. Package and exact-wheel core jobs
+  pass on `windows-latest`, `ubuntu-latest`, and `macos-latest` under Python
+  3.13.14.
+- GUI follow-up: Branch
+  `work/2026-08-03-2226-gui-open-folder-integration` preserves Emily's
+  `8f1e2a7` fix for the Windows-only results-folder callback. It uses
+  nonblocking platform launchers and adds focused Windows, macOS, Linux, and
+  failure-path tests. This remains an optional-GUI fix, not a change to the
+  core package compatibility boundary.
 - Search-efficacy benchmark: The ZDT1 comparison harness now accepts
   `--seeds`, `--trials-per-run`, and `--output-dir`. Its default is 10 seeds x
   500 trials x 2 algorithms, or 10,000 real sequential worker subprocesses.
@@ -156,14 +160,15 @@ the next person can resume without reconstructing recent decisions.
   only transitively through Matplotlib. Mel approved the dedicated
   `hyperloop-synthetic-worker` entry point so installed configurations do not
   guess the owning Python executable.
-- Verification: After the package-remediation pass, all 394 tests pass on
-  Windows under Python 3.13.14. The hygiene check passes across 62 source
-  files. Fresh wheel and sdist builds pass `twine check`; the 30-entry wheel
-  has only NumPy and Matplotlib as direct requirements and contains no GUI,
-  Iris, tests, examples, documentation, or PyTorch. A fresh install outside
-  the checkout passes both command help checks, `pip check`, and a four-trial
-  synthetic-worker run with every required artifact. In that PyTorch-free
-  environment, 380 tests pass and four Iris modules skip as intended. The full
+- Verification: All 398 tests pass on Windows under Python 3.13.14, including
+  four focused GUI launcher regressions. The hygiene check passes across 63
+  source files. Fresh wheel and sdist builds pass `twine check`. The 30-entry
+  wheel has only NumPy and Matplotlib as direct requirements. It contains no
+  GUI, Iris, tests, examples, documentation, or PyTorch. A fresh install
+  outside the checkout passes both command help checks, `pip check`, and a
+  four-trial synthetic-worker run with every required artifact. In that
+  PyTorch-free environment, 380 tests pass and four Iris modules skip as
+  intended. The full
   post-remediation ZDT1 benchmark completed 10,000 real subprocess trials in
   687.6 seconds. NSGA-II mean hypervolume was 0.3884 (44.3% of optimum,
   stdev 0.0924) versus Random Search 0.2113 (24.1%, stdev 0.1119), about 84%
@@ -173,14 +178,10 @@ the next person can resume without reconstructing recent decisions.
   and source archive, uploads that exact distribution bundle, and requires the
   Windows, Ubuntu, and macOS jobs to install the uploaded wheel before running
   the core-compatible suite, dependency check, hygiene check, and installed
-  synthetic-worker smoke test. After this workflow change, all 394 tests, the
-  62-file hygiene check, a fresh wheel/sdist build, `twine check`, and the
-  workflow's exact-wheel selection command pass locally. PR #25 Actions run
-  30872868748 then passed the build-distributions job and
-  the exact-wheel core jobs on `windows-latest`, `ubuntu-latest`, and
-  `macos-latest`. The README now records the verified core-package support
-  boundary; the GUI and PyTorch Iris example remain outside that claim.
-- Next work: Require the documentation commit's final hosted matrix to pass,
-  merge PR #25 without squashing, create the repository checkpoint, and build
-  fresh archives from the exact release commit. The remaining publication
-  gates are recorded in `docs/package-release-checklist.md`.
+  synthetic-worker smoke test. PR #25 Actions runs 30872868748 and 30872993757,
+  plus post-merge run 30873088864, passed the build-distributions job and the
+  exact-wheel core jobs on all three operating systems. The README records the
+  verified core-package support boundary; the GUI and PyTorch Iris example
+  remain outside that claim.
+- Next work: Verify and integrate the GUI follow-up, then continue the
+  TestPyPI and production PyPI gates in `docs/package-release-checklist.md`.

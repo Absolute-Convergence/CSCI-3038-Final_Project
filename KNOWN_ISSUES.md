@@ -9,6 +9,16 @@ No confirmed defects remain open at the package-release remediation checkpoint.
 
 ## Resolved
 
+### The GUI results-folder button called a Windows-only API
+
+The optional GUI used `os.startfile()` unconditionally after an optimization
+completed, raising `AttributeError` on macOS and Linux. The folder launcher now
+dispatches to `os.startfile` on Windows, `open` on macOS, and `xdg-open` on
+Linux. macOS and Linux launchers use nonblocking argument-list subprocesses;
+failure leaves the results intact and reports their resolved location. Focused
+tests cover all three platform branches and launcher failure. The GUI remains
+outside the separately verified core-package compatibility boundary.
+
 ### Invalid configuration paths leaked a raw `ValueError` on Windows
 
 On Windows, a null byte could survive `Path.resolve()` and fail later in
