@@ -29,8 +29,10 @@ from black_box_optimizer.search.nsga2 import (
     _default_mutation_rate,
     _default_population_size,
     _mutate,
+    _polynomial_mutate_value,
     _rank_population,
     _sample_new_random_candidate,
+    _select_survivors,
     _tournament_select,
 )
 
@@ -352,6 +354,66 @@ class CrowdingDistanceTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# _select_survivors
+# ---------------------------------------------------------------------------
+
+
+class SelectSurvivorsTests(unittest.TestCase):
+    def test_keeps_boundary_tier_and_higher_crowding_half_of_cut_tier(
+        self,
+    ) -> None:
+        # Tier 0 (non-dominated): p and q -- tier size 2, so both are the
+        # special-case boundary and get inf. Tier 1: d, e, f, all
+        # dominated by tier 0 and mutually non-dominated. Hand-computed
+        # crowding there: d and f are accuracy/loss boundaries (inf
+        # each), e is the lone interior point at exactly 2.0 (accuracy
+        # gap 1.0 + loss gap 1.0). Keeping population_size=4 must take
+        # all of tier 0 (2) plus the 2 highest-crowding members of tier 1
+        # -- d and f -- and cut e, the lowest-crowding member of the tier
+        # that gets split.
+        p = make_trial_record(0, {}, metrics={"accuracy": 0.9, "loss": 0.3})
+        q = make_trial_record(1, {}, metrics={"accuracy": 0.6, "loss": 0.1})
+        d = make_trial_record(2, {}, metrics={"accuracy": 0.5, "loss": 0.5})
+        e = make_trial_record(3, {}, metrics={"accuracy": 0.3, "loss": 0.3})
+        f = make_trial_record(4, {}, metrics={"accuracy": 0.05, "loss": 0.2})
+        contract = make_contract(*make_parameters(1))
+
+        survivors = _select_survivors((p, q, d, e, f), contract, 4)
+
+        self.assertEqual(
+            {record.trial_id for record in survivors}, {0, 1, 2, 4}
+        )
+
+    def test_population_size_at_or_above_the_pool_keeps_everyone(self) -> None:
+        a = make_trial_record(0, {}, metrics={"accuracy": 0.9, "loss": 0.1})
+        b = make_trial_record(1, {}, metrics={"accuracy": 0.1, "loss": 0.9})
+        contract = make_contract(*make_parameters(1))
+
+        survivors = _select_survivors((a, b), contract, 2)
+
+        self.assertEqual({record.trial_id for record in survivors}, {0, 1})
+
+    def test_lower_rank_always_beats_higher_rank_regardless_of_crowding(
+        self,
+    ) -> None:
+        # b dominates both a and c; c in turn dominates a (higher
+        # accuracy and lower loss than a). Three distinct ranks: b=0,
+        # c=1, a=2. Cutting to population_size=2 must keep the two
+        # lowest ranks (b, c) and drop a, even though every one of these
+        # singleton tiers gets infinite crowding on its own.
+        a = make_trial_record(0, {}, metrics={"accuracy": 0.2, "loss": 0.8})
+        b = make_trial_record(1, {}, metrics={"accuracy": 0.9, "loss": 0.1})
+        c = make_trial_record(2, {}, metrics={"accuracy": 0.3, "loss": 0.7})
+        contract = make_contract(*make_parameters(1))
+
+        survivors = _select_survivors((a, b, c), contract, 2)
+
+        self.assertEqual(
+            {record.trial_id for record in survivors}, {1, 2}
+        )
+
+
+# ---------------------------------------------------------------------------
 # _tournament_select
 # ---------------------------------------------------------------------------
 
@@ -440,20 +502,48 @@ class MutateTests(unittest.TestCase):
 
         self.assertEqual(mutated, parameters)
 
-    def test_mutation_rate_one_replaces_every_parameter(self) -> None:
+    def test_mutation_rate_one_perturbs_every_numeric_parameter_in_bounds(
+        self,
+    ) -> None:
+        # make_parameters() builds INTEGER parameters bounded [0, 100].
+        # Polynomial mutation nudges a value near itself rather than
+        # replacing it outright, so the result is deterministic for a
+        # fixed seed but isn't just some fixed sentinel -- hand-verified
+        # against the actual implementation for seed 0.
         contract = make_contract(*make_parameters(3))
         parameters = {"p0": 1, "p1": 2, "p2": 3}
         generator = np.random.default_rng(0)
 
+        mutated = _mutate(parameters, contract, generator, mutation_rate=1.0)
+
+        self.assertEqual(mutated, {"p0": 1, "p1": 0, "p2": 11})
+        for value in mutated.values():
+            self.assertGreaterEqual(value, 0)
+            self.assertLessEqual(value, 100)
+
+    def test_categorical_parameters_still_use_full_random_resampling(
+        self,
+    ) -> None:
+        # Polynomial mutation needs an ordered numeric range, which a
+        # categorical parameter doesn't have -- it must keep using
+        # _sample_value()'s full random draw instead.
+        categorical = ParameterDefinition(
+            "choice", ParameterKind.CATEGORICAL, choices=("a", "b", "c")
+        )
+        contract = make_contract(categorical)
+        parameters = {"choice": "a"}
+        generator = np.random.default_rng(0)
+
         with patch(
             "black_box_optimizer.search.nsga2._sample_value",
-            return_value=999,
-        ):
+            return_value="sampled",
+        ) as mock_sample:
             mutated = _mutate(
                 parameters, contract, generator, mutation_rate=1.0
             )
 
-        self.assertEqual(mutated, {"p0": 999, "p1": 999, "p2": 999})
+        mock_sample.assert_called_once_with(generator, categorical)
+        self.assertEqual(mutated, {"choice": "sampled"})
 
     def test_does_not_mutate_the_input_dict_in_place(self) -> None:
         contract = make_contract(*make_parameters(1))
@@ -463,6 +553,79 @@ class MutateTests(unittest.TestCase):
         _mutate(parameters, contract, generator, mutation_rate=1.0)
 
         self.assertEqual(parameters, {"p0": 1})
+
+
+class PolynomialMutateValueTests(unittest.TestCase):
+    def test_result_always_stays_within_bounds_for_a_float_parameter(
+        self,
+    ) -> None:
+        parameter = ParameterDefinition(
+            "x", ParameterKind.FLOAT, minimum=0.0, maximum=1.0
+        )
+        generator = np.random.default_rng(0)
+
+        for _ in range(500):
+            result = _polynomial_mutate_value(0.5, parameter, generator)
+            self.assertGreaterEqual(result, 0.0)
+            self.assertLessEqual(result, 1.0)
+
+    def test_result_always_stays_within_bounds_for_an_integer_parameter(
+        self,
+    ) -> None:
+        parameter = ParameterDefinition(
+            "x", ParameterKind.INTEGER, minimum=0, maximum=10
+        )
+        generator = np.random.default_rng(0)
+
+        for _ in range(500):
+            result = _polynomial_mutate_value(5, parameter, generator)
+            self.assertIsInstance(result, int)
+            self.assertGreaterEqual(result, 0)
+            self.assertLessEqual(result, 10)
+
+    def test_a_value_near_the_lower_bound_can_still_produce_the_bound_itself(
+        self,
+    ) -> None:
+        # Regression check for the clamp: without it, delta_q could push
+        # a value already near a boundary slightly past [lower, upper].
+        parameter = ParameterDefinition(
+            "x", ParameterKind.FLOAT, minimum=0.0, maximum=1.0
+        )
+        generator = np.random.default_rng(0)
+
+        results = [
+            _polynomial_mutate_value(0.001, parameter, generator)
+            for _ in range(500)
+        ]
+
+        self.assertTrue(all(0.0 <= value <= 1.0 for value in results))
+
+    def test_zero_range_parameter_returns_the_value_unchanged(self) -> None:
+        # minimum == maximum leaves no room to perturb; dividing by
+        # (upper - lower) would be a division by zero if not guarded.
+        parameter = ParameterDefinition(
+            "x", ParameterKind.INTEGER, minimum=5, maximum=5
+        )
+        generator = np.random.default_rng(0)
+
+        result = _polynomial_mutate_value(5, parameter, generator)
+
+        self.assertEqual(result, 5)
+
+    def test_repeated_calls_do_not_all_return_the_same_value(self) -> None:
+        # Confirms the perturbation is actually doing something -- not
+        # just clamping to a single fixed point every time.
+        parameter = ParameterDefinition(
+            "x", ParameterKind.FLOAT, minimum=0.0, maximum=1.0
+        )
+        generator = np.random.default_rng(0)
+
+        results = {
+            _polynomial_mutate_value(0.5, parameter, generator)
+            for _ in range(20)
+        }
+
+        self.assertGreater(len(results), 1)
 
 
 # ---------------------------------------------------------------------------
