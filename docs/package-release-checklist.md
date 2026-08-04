@@ -44,7 +44,7 @@ does not declare Pillow as a GUI dependency in its package metadata.
 
 - Updated `main` baseline: 366 tests passed after PR #24 fixed negative-seed
   validation and before that change was merged into the package branch.
-- Remediated package tree: all 392 tests pass on Windows under Python 3.13.14,
+- Remediated package tree: all 394 tests pass on Windows under Python 3.13.14,
   including the formerly failing invalid-path regression.
 - Known-issue audit: PR #24 correctly fixes the negative-seed CLI crash. The
   other nine upstream reports and the Windows-specific finding are resolved on
@@ -54,12 +54,15 @@ does not declare Pillow as a GUI dependency in its package metadata.
   results are ignored.
 - Repeated-run test: an older two-trial Pareto front cannot enter a later
   one-trial run or overwrite its reports.
-- Full ZDT1 comparison: 5 seeds and 500 trials per algorithm, totaling 5,000
-  real sequential worker subprocesses.
-  - Random Search mean final hypervolume: 0.2370 (27.0% of optimum), standard
-    deviation 0.1568.
-  - NSGA-II mean final hypervolume: 0.3890 (44.4% of optimum), standard
-    deviation 0.0692.
+- Post-remediation ZDT1 comparison: 10 seeds and 500 trials per algorithm,
+  totaling 10,000 real sequential worker subprocesses in 687.6 seconds.
+  - Random Search mean final hypervolume: 0.2113 (24.1% of optimum), standard
+    deviation 0.1119.
+  - NSGA-II mean final hypervolume: 0.3884 (44.3% of optimum), standard
+    deviation 0.0924.
+  - NSGA-II produced about 84% more dominated hypervolume than Random Search
+    on average. Raw traces contain exactly 5,000 trials per algorithm; the CSV
+    and convergence chart remain ignored generated evidence.
 - Remediated-tree build: the wheel and source archive build successfully and
   pass `twine check`. The wheel contains 30 entries, excludes the GUI, Iris,
   examples, tests, documentation, and PyTorch, and exposes both approved
@@ -68,8 +71,9 @@ does not declare Pillow as a GUI dependency in its package metadata.
   absent; both `hyperloop-optimizer --help` and
   `hyperloop-synthetic-worker --help` succeed outside the checkout.
 - Installed smoke run: four valid synthetic trials completed and produced a
-  three-member Pareto front with all required report artifacts.
-- Core-only test environment: 378 tests pass and four Iris/PyTorch modules are
+  three-member Pareto front with all required report artifacts. This checks
+  package wiring only; it is separate from the 10,000-trial efficacy result.
+- Core-only test environment: 380 tests pass and four Iris/PyTorch modules are
   skipped as intended.
 
 ## Remaining Gates

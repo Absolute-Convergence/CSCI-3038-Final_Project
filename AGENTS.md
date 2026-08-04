@@ -132,6 +132,12 @@ the next person can resume without reconstructing recent decisions.
   module CLI remains available. The wheel contains the optimizer core and the
   dependency-free synthetic worker, while the Iris worker, GUI, tests, and
   class-project material remain outside the installed package.
+- Search-efficacy benchmark: The ZDT1 comparison harness now accepts
+  `--seeds`, `--trials-per-run`, and `--output-dir`. Its default is 10 seeds x
+  500 trials x 2 algorithms, or 10,000 real sequential worker subprocesses.
+  The documented practical tiers are 1,000, 5,000, and 10,000 total trials,
+  selected with 1, 5, or 10 seeds respectively. Do not use 20K/50K as package
+  release gates; the verified 10K run already takes about 11.5 minutes.
 - Cleanup: Checkpoint `beaefa7` removes 515 generated
   `optimizer_runs/` artifacts from Git tracking while preserving the local
   files under an ignored root directory. A repeated-run integration test
@@ -150,15 +156,19 @@ the next person can resume without reconstructing recent decisions.
   only transitively through Matplotlib. Mel approved the dedicated
   `hyperloop-synthetic-worker` entry point so installed configurations do not
   guess the owning Python executable.
-- Verification: After the package-remediation pass, all 392 tests pass on
+- Verification: After the package-remediation pass, all 394 tests pass on
   Windows under Python 3.13.14. The hygiene check passes across 62 source
   files. Fresh wheel and sdist builds pass `twine check`; the 30-entry wheel
   has only NumPy and Matplotlib as direct requirements and contains no GUI,
   Iris, tests, examples, documentation, or PyTorch. A fresh install outside
   the checkout passes both command help checks, `pip check`, and a four-trial
   synthetic-worker run with every required artifact. In that PyTorch-free
-  environment, 378 tests pass and four Iris modules skip as intended. The full
-  5-seed, 500-trial-per-algorithm ZDT1 benchmark completed earlier.
+  environment, 380 tests pass and four Iris modules skip as intended. The full
+  post-remediation ZDT1 benchmark completed 10,000 real subprocess trials in
+  687.6 seconds. NSGA-II mean hypervolume was 0.3884 (44.3% of optimum,
+  stdev 0.0924) versus Random Search 0.2113 (24.1%, stdev 0.1119), about 84%
+  more dominated hypervolume. The ignored raw CSV contains 5,000 rows per
+  algorithm and the ignored convergence PNG was regenerated.
 - Next work: Rebuild the wheel and sdist from this remediated tree, rerun
   metadata and isolated-install smoke checks, review the branch, then require
   the Windows/Ubuntu/macOS package workflow to pass in a pull request before

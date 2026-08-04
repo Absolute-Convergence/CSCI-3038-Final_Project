@@ -19,6 +19,7 @@ from pathlib import Path
 
 from black_box_optimizer.metrics import read_trial_metrics
 from examples.zdt1_benchmark.compare_search_algorithms import (
+    build_argument_parser,
     hypervolume_2d,
     true_zdt1_hypervolume,
 )
@@ -109,6 +110,25 @@ class SyntheticWorkerProcessTests(unittest.TestCase):
                 read_trial_metrics(metrics_path),
                 {"f1": 0.25, "f2": 0.5},
             )
+
+
+class BenchmarkConfigurationTests(unittest.TestCase):
+    def test_default_runs_ten_thousand_real_worker_trials(self) -> None:
+        arguments = build_argument_parser().parse_args([])
+
+        total = 2 * arguments.seeds * arguments.trials_per_run
+        self.assertEqual(arguments.seeds, 10)
+        self.assertEqual(arguments.trials_per_run, 500)
+        self.assertEqual(total, 10_000)
+
+    def test_seed_count_supports_one_five_and_ten_thousand(self) -> None:
+        parser = build_argument_parser()
+
+        for seeds, expected_total in ((1, 1_000), (5, 5_000), (10, 10_000)):
+            with self.subTest(seeds=seeds):
+                arguments = parser.parse_args(["--seeds", str(seeds)])
+                total = 2 * arguments.seeds * arguments.trials_per_run
+                self.assertEqual(total, expected_total)
 
 
 class Hypervolume2DTests(unittest.TestCase):

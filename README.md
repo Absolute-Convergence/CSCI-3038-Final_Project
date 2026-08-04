@@ -285,6 +285,26 @@ hyperloop-optimizer `
   --output-dir runs
 ```
 
+That four-trial configuration is an installation and artifact smoke test, not
+a search-quality claim. Search efficacy is measured separately against ZDT1's
+known optimal front with repeated seeds and dominated hypervolume. The default
+comparison launches 10,000 real worker subprocesses: two algorithms, ten seeds
+per algorithm, and 500 trials per seeded run.
+
+```powershell
+py -3.13 -m examples.zdt1_benchmark.compare_search_algorithms
+```
+
+Use one or five seeds for the shorter 1,000- or 5,000-trial tiers while
+keeping 500 trials in each independent run. The unchanged default is the
+10,000-trial release-evidence tier:
+
+```powershell
+py -3.13 -m examples.zdt1_benchmark.compare_search_algorithms --seeds 1
+py -3.13 -m examples.zdt1_benchmark.compare_search_algorithms --seeds 5
+py -3.13 -m examples.zdt1_benchmark.compare_search_algorithms
+```
+
 Each invocation creates a unique `run_*` directory. It contains the resolved
 configuration, atomically checkpointed `history.csv`, one directory per trial,
 the complete Pareto CSV, a text summary, and a PNG showing the first two
@@ -371,7 +391,7 @@ Run the repository-wide source hygiene check:
 py -3.13 tools\check_monoliths.py
 ```
 
-At the package-preparation checkpoint, 291 tests pass under the
+At the package-remediation checkpoint, 394 tests pass under the
 course-required Python 3.13.14 interpreter. The suite includes real
 controller-to-Iris runs, a synthetic-worker subprocess test, an end-to-end
 module CLI test, repeated-run isolation coverage, and packaging-boundary

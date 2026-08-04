@@ -24,6 +24,7 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import csv
 import math
 import statistics
@@ -61,11 +62,47 @@ _NUM_VARIABLES = 4
 # for ZDT1 hypervolume in the literature.
 _REFERENCE_POINT = (1.1, 1.1)
 
-_SEEDS = range(5)
-_TRIALS_PER_RUN = 500
 _ALGORITHMS = ("random_search", "nsga2")
+_DEFAULT_SEED_COUNT = 10
+_DEFAULT_TRIALS_PER_RUN = 500
 
 _OUTPUT_DIR = Path(__file__).parent / "comparison_results"
+
+
+def _positive_integer(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def build_argument_parser() -> argparse.ArgumentParser:
+    """Build the configurable search-efficacy benchmark interface."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Compare Random Search and NSGA-II against ZDT1 using real "
+            "synthetic-worker subprocess trials."
+        )
+    )
+    parser.add_argument(
+        "--seeds",
+        type=_positive_integer,
+        default=_DEFAULT_SEED_COUNT,
+        help="independent seeds per algorithm (default: 10)",
+    )
+    parser.add_argument(
+        "--trials-per-run",
+        type=_positive_integer,
+        default=_DEFAULT_TRIALS_PER_RUN,
+        help="worker trials per algorithm/seed run (default: 500)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=_OUTPUT_DIR,
+        help="directory for raw CSV and convergence chart",
+    )
+    return parser
 
 
 def make_contract() -> OptimizationContract:
@@ -161,7 +198,7 @@ def run_one_search(
         for trial_id in range(trials):
             proposal = algorithm.propose(contract, history.snapshot())
             if proposal.status != "candidate":
-                # Shouldn't happen on a continuous 30-dimensional float
+                # Shouldn't happen on a continuous 4-dimensional float
                 # space, but stop cleanly rather than crash if it ever does.
                 break
 
@@ -272,22 +309,37 @@ def plot_convergence(
     figure.savefig(output_path)
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
+    arguments = build_argument_parser().parse_args(argv)
+    seeds = range(arguments.seeds)
+    trials_per_run = arguments.trials_per_run
+    output_directory = arguments.output_dir.resolve()
     contract = make_contract()
     worker_spec = make_worker_spec()
     true_hypervolume = true_zdt1_hypervolume(_REFERENCE_POINT)
 
-    _OUTPUT_DIR.mkdir(exist_ok=True)
+    output_directory.mkdir(parents=True, exist_ok=True)
 
     traces: dict[tuple[str, int], list[float]] = {}
-    total_runs = len(_ALGORITHMS) * len(list(_SEEDS))
+    total_runs = len(_ALGORITHMS) * len(seeds)
+    total_worker_trials = total_runs * trials_per_run
     completed = 0
     started = time.perf_counter()
+    print(
+        f"Starting {total_worker_trials:,} real worker trials: "
+        f"{len(_ALGORITHMS)} algorithms x {len(seeds)} seeds x "
+        f"{trials_per_run} trials.",
+        flush=True,
+    )
 
     for algorithm_name in _ALGORITHMS:
-        for seed in _SEEDS:
+        for seed in seeds:
             traces[(algorithm_name, seed)] = run_one_search(
-                algorithm_name, seed, contract, worker_spec, _TRIALS_PER_RUN
+                algorithm_name,
+                seed,
+                contract,
+                worker_spec,
+                trials_per_run,
             )
             completed += 1
             elapsed = time.perf_counter() - started
@@ -297,13 +349,16 @@ def main() -> None:
                 flush=True,
             )
 
-    write_raw_csv(_OUTPUT_DIR / "raw_hypervolume_traces.csv", traces)
+    write_raw_csv(output_directory / "raw_hypervolume_traces.csv", traces)
     print_summary(traces, true_hypervolume)
     plot_convergence(
-        traces, true_hypervolume, _OUTPUT_DIR / "hypervolume_comparison.png"
+        traces,
+        true_hypervolume,
+        output_directory / "hypervolume_comparison.png",
     )
-    print(f"\nRaw data and chart written to {_OUTPUT_DIR}/")
+    print(f"\nRaw data and chart written to {output_directory}/")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
