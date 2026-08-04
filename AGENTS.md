@@ -169,8 +169,16 @@ the next person can resume without reconstructing recent decisions.
   stdev 0.0924) versus Random Search 0.2113 (24.1%, stdev 0.1119), about 84%
   more dominated hypervolume. The ignored raw CSV contains 5,000 rows per
   algorithm and the ignored convergence PNG was regenerated.
-- Next work: Rebuild the wheel and sdist from this remediated tree, rerun
-  metadata and isolated-install smoke checks, review the branch, then require
-  the Windows/Ubuntu/macOS package workflow to pass in a pull request before
-  publication. The remaining release gates are recorded in
+- Cross-platform gate: The package workflow now builds and validates one wheel
+  and source archive, uploads that exact distribution bundle, and requires the
+  Windows, Ubuntu, and macOS jobs to install the uploaded wheel before running
+  the core-compatible suite, dependency check, hygiene check, and installed
+  synthetic-worker smoke test. Hosted-runner results remain pending until the
+  branch is pushed and its pull request jobs complete. After this workflow
+  change, all 394 tests, the 62-file hygiene check, a fresh wheel/sdist build,
+  `twine check`, and the workflow's exact-wheel selection command pass locally.
+- Next work: Push this branch, open its pull request, and require the package,
+  Windows, Ubuntu, and macOS jobs to pass. After hosted verification, record
+  the support claim and build the final archives from the exact release commit.
+  The remaining release gates are recorded in
   `docs/package-release-checklist.md`.

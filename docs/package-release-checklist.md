@@ -86,7 +86,8 @@ does not declare Pillow as a GUI dependency in its package metadata.
 - [x] Run the final complete suite with PyTorch installed.
 - [x] Run the repository source-hygiene checker after the last change.
 - [ ] Open a pull request and require the Windows, Ubuntu, macOS, and package
-  jobs in `.github/workflows/package.yml` to pass.
+  jobs in `.github/workflows/package.yml` to pass. Each operating-system job
+  must install the exact wheel uploaded by the package job.
 - [ ] Build fresh archives from the exact release commit.
 - [ ] Inspect archive contents and rerun `python -m twine check dist/*`.
 - [ ] Upload to TestPyPI and install v0.1.1 into a fresh Python 3.13.14
