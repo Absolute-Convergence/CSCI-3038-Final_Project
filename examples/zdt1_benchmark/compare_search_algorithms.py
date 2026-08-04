@@ -1,22 +1,17 @@
 """
 compare_search_algorithms.py
 
-Runs RandomSearch and NSGA2 against Hyperloop's synthetic ZDT1 worker across
-multiple seeds, and reports the hypervolume each
-achieves relative to ZDT1's known, closed-form optimal Pareto front.
+Runs both search algos against Hyperloops synthetic ZDT1 worker across
+many multiple seeds magoo then reports the hypervolume each one reaches!
 
-Nothing here is simulated: every trial launches synthetic_worker.py as a real
-subprocess, exactly the same way runner.py always does. What's different
-from the Iris example is that ZDT1 trials are near-instant (no model
-training), so this can afford many seeds x many trials -- the two things
-a single, slow, real-worker run can't give you:
+Every trial still launches synthetic_worker.py through runner.py as a real
+subprocess because the very arithmetic ZDT1 is fast enough that we can
+afford a bunch of seeds and trials without waiting like for model training
 
-  - Multiple independent seeds per algorithm, so "NSGA2 looks better" is
-    a real trend across runs, not one lucky (or unlucky) draw.
-  - A known ground truth. ZDT1's true optimal front is f2 = 1 - sqrt(f1),
-    so "how good is this front" has an actual answer (hypervolume as a
-    fraction of the true optimal hypervolume), not just two point clouds
-    eyeballed side by side.
+That gives us two things one normal worker run can't:
+
+  - Multiple seeds so one lucky run cant carry the whole conclusion
+  - A known answer because ZDT1s optimal front is f2 = 1 - sqrt(f1)
 
 Usage:
     python -m examples.zdt1_benchmark.compare_search_algorithms
@@ -27,10 +22,13 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+import os
 import statistics
 import sys
 import tempfile
 import time
+from collections.abc import Sequence
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -53,13 +51,14 @@ from black_box_optimizer.search.registry import create_algorithm
 from hyperloop_workers import synthetic_worker
 
 _WORKER_PATH = Path(synthetic_worker.__file__).resolve()
-# Must match synthetic_worker.py's own _NUM_VARIABLES; see its docstring
-# for why this is 4, not the original ZDT1 paper's 30.
+
+# Must match synthetic_worker.py!
+# This version uses four variables instead of the original paper's thirty
+# so the benchmark stays lightweight
 _NUM_VARIABLES = 4
 
-# Worse than any point ZDT1 can produce on either objective, so every real
-# trial contributes some dominated area relative to it. Standard choice
-# for ZDT1 hypervolume in the literature.
+# Slightly worse than any real ZDT1 point so every valid trial can
+# contribute some area toward the hypervolume
 _REFERENCE_POINT = (1.1, 1.1)
 
 _ALGORITHMS = ("random_search", "nsga2")
@@ -77,7 +76,7 @@ def _positive_integer(value: str) -> int:
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
-    """Build the configurable search-efficacy benchmark interface."""
+    """Build the command line options for the benchmark"""
     parser = argparse.ArgumentParser(
         description=(
             "Compare Random Search and NSGA-II against ZDT1 using real "
@@ -102,11 +101,21 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=_OUTPUT_DIR,
         help="directory for raw CSV and convergence chart",
     )
+    parser.add_argument(
+        "--jobs",
+        type=_positive_integer,
+        default=os.cpu_count() or 1,
+        help=(
+            "algorithm/seed runs to execute concurrently, each in its own "
+            "process (default: os.cpu_count()); runs are fully independent, "
+            "so this only affects wall-clock time, not results"
+        ),
+    )
     return parser
 
 
 def make_contract() -> OptimizationContract:
-    """Build the bounded ZDT1 space with two minimized objectives."""
+    """Build the bounded ZDT1 search space and its two objectives."""
     parameters = tuple(
         ParameterDefinition(f"x{i}", ParameterKind.FLOAT, 0.0, 1.0)
         for i in range(1, _NUM_VARIABLES + 1)
@@ -122,8 +131,8 @@ def make_worker_spec() -> WorkerSpec:
     return WorkerSpec(
         command=(sys.executable, str(_WORKER_PATH)),
         metrics_argument="--metrics-out",
-        # ZDT1 trials are near-instant (pure arithmetic, no training) --
-        # generous only to absorb subprocess-launch variance, not real work.
+        # ZDT1 only does a little arithmetic so this timeout mostly gives
+        # subprocess startup plenty of breathing room
         timeout_seconds=10.0,
     )
 
@@ -132,15 +141,15 @@ def hypervolume_2d(
     points: list[tuple[float, float]],
     reference: tuple[float, float],
 ) -> float:
-    """Dominated hypervolume for 2D minimization, relative to `reference`.
+    """Calculate dominated hypervolume for a 2D minimization problem
 
-    Standard sort-and-sweep algorithm. Sort candidate points by the first
-    objective ascending; each point "owns" the x-range up to the next
-    point that actually improves on the best second-objective value seen
-    so far. Points at or worse than the reference on either objective
-    contribute nothing. Works on any point set, not just an already-
-    non-dominated front -- a dominated point simply never improves on
-    best_y and is skipped.
+    Points are sorted by the first objective, then swept left to right.
+    A point only adds area when it improves the best second objective
+    value we've seen so far.
+
+    Points outside the reference boundary add nothing, and dominated
+    points naturally get skipped so the input doesn't need to already
+    be a clean Pareto front.
     """
     ref_x, ref_y = reference
     candidates = sorted(
@@ -163,16 +172,81 @@ def hypervolume_2d(
     return area
 
 
+def _standard_normal_cdf(z: float) -> float:
+    """Return P Z less than or equal to z for a standard normal variable"""
+    return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+
+
+def mann_whitney_u(
+    sample_a: Sequence[float],
+    sample_b: Sequence[float],
+) -> tuple[float, float]:
+    """Run a two-sided Mann Whitney U test (without scipy)
+
+    This checks whether one algorithm generally produces higher results
+    than the other, without assuming the samples are normally distributed.
+
+    Returns the U statistic for sample_a and the two-sided p value
+
+    The p value uses the normal approximation which works for the seed
+    counts this benchmark is meant to run...tee tiny samples would need an
+    exact permutation test instead!
+    """
+    n_a = len(sample_a)
+    n_b = len(sample_b)
+    labeled = sorted(
+        [(value, "a") for value in sample_a]
+        + [(value, "b") for value in sample_b]
+    )
+
+    # Give every value a rank from 1 through n
+    # Tied values split the ranks they occupy
+    ranks: list[float] = [0.0] * len(labeled)
+    tie_group_sizes: list[int] = []
+    index = 0
+    while index < len(labeled):
+        end = index
+        while end < len(labeled) and labeled[end][0] == labeled[index][0]:
+            end += 1
+        average_rank = (index + 1 + end) / 2.0
+        for position in range(index, end):
+            ranks[position] = average_rank
+        tie_group_sizes.append(end - index)
+        index = end
+
+    rank_sum_a = sum(
+        rank
+        for rank, (_value, label) in zip(ranks, labeled)
+        if label == "a"
+    )
+    u_a = rank_sum_a - n_a * (n_a + 1) / 2.0
+
+    n_total = n_a + n_b
+    mean_u = n_a * n_b / 2.0
+    tie_correction = sum(size**3 - size for size in tie_group_sizes)
+    if n_total <= 1:
+        return u_a, 1.0
+    variance_u = (n_a * n_b / 12.0) * (
+        (n_total + 1) - tie_correction / (n_total * (n_total - 1))
+    )
+    if variance_u <= 0:
+        # Every value is identical so there's no difference to detect
+        return u_a, 1.0
+
+    z_score = (u_a - mean_u) / math.sqrt(variance_u)
+    p_value = 2.0 * (1.0 - _standard_normal_cdf(abs(z_score)))
+    return u_a, min(1.0, p_value)
+
+
 def true_zdt1_hypervolume(
     reference: tuple[float, float],
     samples: int = 20_000,
 ) -> float:
-    """Hypervolume of ZDT1's true optimal front (f2 = 1 - sqrt(f1)).
+    """Approximate the hypervolume of ZDT1s known optimal front.
 
-    Computed the same way as every other hypervolume in this file -- a
-    dense, piecewise-linear sample of the known closed-form front fed
-    through hypervolume_2d -- rather than a separately hand-derived
-    formula, so there's only one hypervolume implementation to trust.
+    Sample the known front densely then feed it through the same
+    hypervolume function everything else uses, so there's only one
+    implementation to trust.
     """
     points = [
         (f1, 1.0 - math.sqrt(f1))
@@ -188,7 +262,7 @@ def run_one_search(
     worker_spec: WorkerSpec,
     trials: int,
 ) -> list[float]:
-    """Run one full seeded search, returning hypervolume after each trial."""
+    """Run one seeded search and record hypervolume after every trial"""
     algorithm = create_algorithm(AlgorithmSpec(name=algorithm_name, seed=seed))
     history = TrialHistory()
     trace: list[float] = []
@@ -198,8 +272,8 @@ def run_one_search(
         for trial_id in range(trials):
             proposal = algorithm.propose(contract, history.snapshot())
             if proposal.status != "candidate":
-                # Shouldn't happen on a continuous 4-dimensional float
-                # space, but stop cleanly rather than crash if it ever does.
+                # A continuous float space shouldn't run out but it's better to
+                # stop cleanly than get funky if something changes
                 break
 
             metrics_path = tmp_path / f"trial_{trial_id}.csv"
@@ -224,10 +298,11 @@ def run_one_search(
 def write_raw_csv(
     path: Path, traces: dict[tuple[str, int], list[float]]
 ) -> None:
+    """Write every algorithm seed trial and hypervolume result to CSV"""
     with path.open("w", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(["algorithm", "seed", "trial_number", "hypervolume"])
-        for (algorithm_name, seed), trace in traces.items():
+        for (algorithm_name, seed), trace in sorted(traces.items()):
             for trial_number, hypervolume in enumerate(trace, start=1):
                 writer.writerow(
                     [algorithm_name, seed, trial_number, hypervolume]
@@ -237,21 +312,109 @@ def write_raw_csv(
 def print_summary(
     traces: dict[tuple[str, int], list[float]], true_hypervolume: float
 ) -> None:
+    """Print the final results and significance test"""
     print(f"\nTrue ZDT1 optimal hypervolume (reference {_REFERENCE_POINT}): "
           f"{true_hypervolume:.4f}\n")
     print(f"{'algorithm':<15} {'seeds':<7} {'mean final HV':<15} "
           f"{'stdev':<10} {'% of optimal':<12}")
+    finals_by_algorithm: dict[str, list[float]] = {}
     for algorithm_name in _ALGORITHMS:
         finals = [
             trace[-1]
             for (name, _seed), trace in traces.items()
             if name == algorithm_name and trace
         ]
+        finals_by_algorithm[algorithm_name] = finals
         mean = statistics.fmean(finals)
         stdev = statistics.stdev(finals) if len(finals) > 1 else 0.0
         pct = 100.0 * mean / true_hypervolume
         print(f"{algorithm_name:<15} {len(finals):<7} {mean:<15.4f} "
               f"{stdev:<10.4f} {pct:<12.1f}")
+
+    # Means can look different just from seed luck
+    # This checks whether the result distributions are actually separated
+    if len(_ALGORITHMS) == 2:
+        first_name, second_name = _ALGORITHMS
+        _u_statistic, p_value = mann_whitney_u(
+            finals_by_algorithm[first_name], finals_by_algorithm[second_name]
+        )
+        verdict = (
+            "statistically significant (p < 0.05)"
+            if p_value < 0.05
+            else "NOT statistically significant at the 0.05 level"
+        )
+        print(
+            f"\nMann-Whitney U test on final hypervolume, "
+            f"{first_name} vs. {second_name}: p = {p_value:.4f} -- {verdict}"
+        )
+
+
+# These are trial counts a real worker might actually be able to afford
+# A training job can take minutes per trial while this one takes almost
+# no time so the full benchmark budget wouldn't be realistic there
+_REALISTIC_BUDGET_CHECKPOINTS = (10, 25, 50, 100)
+
+
+def print_budget_checkpoints(
+    traces: dict[tuple[str, int], list[float]],
+) -> None:
+    """Show whether NSGA2's advantage appears at smaller trial budgets.
+
+    Huge trial budgets are only practical because ZDT1 is synthetic.
+    The useful question is whether the advantage shows up before a real
+    slow worker gets outrageously expensive
+
+    This reuses the traces we already collected so it doesn't launch any
+    extra worker trials.
+    """
+    if len(_ALGORITHMS) != 2:
+        return
+
+    first_name, second_name = _ALGORITHMS
+    max_affordable_trials = min(
+        (len(trace) for trace in traces.values() if trace), default=0
+    )
+
+    print("\nDoes the advantage hold at a realistic (small) trial budget?")
+    print(
+        f"{'trials':<8} {first_name:<16} {second_name:<10} {'p-value':<10}"
+    )
+    for checkpoint in _REALISTIC_BUDGET_CHECKPOINTS:
+        if checkpoint > max_affordable_trials:
+            break
+
+        values_by_algorithm = {
+            algorithm_name: [
+                trace[checkpoint - 1]
+                for (name, _seed), trace in traces.items()
+                if name == algorithm_name and len(trace) >= checkpoint
+            ]
+            for algorithm_name in _ALGORITHMS
+        }
+        first_mean = statistics.fmean(values_by_algorithm[first_name])
+        second_mean = statistics.fmean(values_by_algorithm[second_name])
+        _u_statistic, p_value = mann_whitney_u(
+            values_by_algorithm[first_name], values_by_algorithm[second_name]
+        )
+        print(
+            f"{checkpoint:<8} {first_mean:<16.4f} {second_mean:<10.4f} "
+            f"{p_value:<10.4f}"
+        )
+
+
+def _quartiles(values: Sequence[float]) -> tuple[float, float]:
+    """Return Q1 and Q3 for the values.
+
+    One value doesn't have any spread so it becomes v and v instead of
+    making statistics.quantiles complain.
+    """
+    if len(values) < 2:
+        (only,) = values
+        return only, only
+    first_quartile, _median, third_quartile = statistics.quantiles(
+        values, n=4
+    )
+    return first_quartile, third_quartile
 
 
 def plot_convergence(
@@ -259,9 +422,12 @@ def plot_convergence(
     true_hypervolume: float,
     output_path: Path,
 ) -> None:
-    """Mean hypervolume vs. trial count per algorithm, averaged over seeds,
-    with a min-max band across seeds and a dashed true-optimal reference
-    line."""
+    """Plot mean hypervolume across trials for each algorithm.
+
+    The shaded band shows the interquartile range across seeds instead
+    of min and max, so one very lucky or cursed seed can't take over the
+    whole chart.
+    """
     figure = Figure(figsize=(8.0, 5.5), dpi=120)
     canvas = FigureCanvasAgg(figure)
     axes = figure.add_subplot(1, 1, 1)
@@ -281,17 +447,21 @@ def plot_convergence(
             statistics.fmean(trace[i] for trace in trimmed)
             for i in range(shortest)
         ]
-        minimums = [
-            min(trace[i] for trace in trimmed) for i in range(shortest)
+        quartiles = [
+            _quartiles([trace[i] for trace in trimmed])
+            for i in range(shortest)
         ]
-        maximums = [
-            max(trace[i] for trace in trimmed) for i in range(shortest)
-        ]
+        lower_quartiles = [q1 for q1, _q3 in quartiles]
+        upper_quartiles = [q3 for _q1, q3 in quartiles]
 
         color = colors.get(algorithm_name, None)
         axes.plot(trial_numbers, means, label=algorithm_name, color=color)
         axes.fill_between(
-            trial_numbers, minimums, maximums, color=color, alpha=0.15
+            trial_numbers,
+            lower_quartiles,
+            upper_quartiles,
+            color=color,
+            alpha=0.15,
         )
 
     axes.axhline(
@@ -303,7 +473,9 @@ def plot_convergence(
     )
     axes.set_xlabel("trials consumed")
     axes.set_ylabel("hypervolume")
-    axes.set_title("ZDT1: NSGA2 vs. random_search")
+    axes.set_title(
+        "ZDT1: NSGA2 vs. random_search"
+    )
     axes.legend(loc="lower right")
     figure.tight_layout()
     figure.savefig(output_path)
@@ -321,26 +493,37 @@ def main(argv: list[str] | None = None) -> int:
     output_directory.mkdir(parents=True, exist_ok=True)
 
     traces: dict[tuple[str, int], list[float]] = {}
-    total_runs = len(_ALGORITHMS) * len(seeds)
+    tasks = [
+        (algorithm_name, seed)
+        for algorithm_name in _ALGORITHMS
+        for seed in seeds
+    ]
+    total_runs = len(tasks)
     total_worker_trials = total_runs * trials_per_run
     completed = 0
     started = time.perf_counter()
     print(
         f"Starting {total_worker_trials:,} real worker trials: "
         f"{len(_ALGORITHMS)} algorithms x {len(seeds)} seeds x "
-        f"{trials_per_run} trials.",
+        f"{trials_per_run} trials ({arguments.jobs} run(s) at a time).",
         flush=True,
     )
 
-    for algorithm_name in _ALGORITHMS:
-        for seed in seeds:
-            traces[(algorithm_name, seed)] = run_one_search(
+    with ProcessPoolExecutor(max_workers=arguments.jobs) as executor:
+        futures = {
+            executor.submit(
+                run_one_search,
                 algorithm_name,
                 seed,
                 contract,
                 worker_spec,
                 trials_per_run,
-            )
+            ): (algorithm_name, seed)
+            for algorithm_name, seed in tasks
+        }
+        for future in as_completed(futures):
+            algorithm_name, seed = futures[future]
+            traces[(algorithm_name, seed)] = future.result()
             completed += 1
             elapsed = time.perf_counter() - started
             print(
@@ -351,6 +534,7 @@ def main(argv: list[str] | None = None) -> int:
 
     write_raw_csv(output_directory / "raw_hypervolume_traces.csv", traces)
     print_summary(traces, true_hypervolume)
+    print_budget_checkpoints(traces)
     plot_convergence(
         traces,
         true_hypervolume,
