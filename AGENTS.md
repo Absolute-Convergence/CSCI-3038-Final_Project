@@ -165,10 +165,12 @@ the next person can resume without reconstructing recent decisions.
   (`work/2026-08-03-1903-test-bug-audit`) merged a coverage-closing pass
   (91% -> 99% overall, 80 new tests, 363 total) into `main` as merge commit
   `d72d3c9`. PR #23 (`work/2026-08-03-1940-bug-hunt`) fixed the
-  order-dependent crowding-distance bug in `nsga2.py` (see
-  `KNOWN_ISSUES.md`'s Resolved section) into `main` as merge commit
-  `341abdb`. All four working branches deleted locally and remotely per
-  convention.
+  order-dependent crowding-distance bug in `nsga2.py` into `main` as merge
+  commit `341abdb`. PR #24 (`work/2026-08-03-2011-negative-seed-bug`)
+  fixed the negative-seed CLI crash by rejecting it at `AlgorithmSpec`
+  construction into `main` as merge commit `faae4d8` (see
+  `KNOWN_ISSUES.md`'s Resolved section for both). All five working
+  branches deleted locally and remotely per convention.
 - Decisions: NSGA-II is hand-implemented rather than depending on pymoo --
   pymoo's primary API assumes ownership of the evaluation loop (batch
   `minimize()`), doesn't fit this project's one-worker-at-a-time controller,
@@ -187,7 +189,7 @@ the next person can resume without reconstructing recent decisions.
   than nudging toward a better one). Generated comparison output (raw CSV,
   chart) is gitignored under `examples/zdt1_benchmark/comparison_results/`
   as regenerable evidence, same treatment as `/runs/`.
-- Verification: All 363 tests pass under Python 3.13.14 (the course-required
+- Verification: All 366 tests pass under Python 3.13.14 (the course-required
   interpreter; `.venv` was rebuilt from a stray 3.14.6 install during the
   NSGA-II checkpoint and has stayed on 3.13.14 since). Overall package
   coverage is 99% (1385 statements / 452 branches; 20 of 22 source files at
@@ -205,18 +207,19 @@ the next person can resume without reconstructing recent decisions.
 - A separate, dedicated adversarial bug-hunt pass (six parallel reviewers,
   one per module cluster, run immediately after the coverage pass above
   reached 99% with no bugs found) found 11 real, independently-reproduced
-  bugs and 4 test-quality gaps that coverage alone never surfaces. One
-  (the `nsga2.py` crowding-distance bug) is fixed as of PR #23; the other
-  10 are still open. Full details, each with a concrete repro, are
-  recorded in `KNOWN_ISSUES.md` (Open and Resolved sections) -- read that
-  file before starting the next branch instead of re-deriving this list.
-  Two of the remaining 10 are critical (`AlgorithmSpec` accepts a negative
-  seed and crashes the CLI with an unhandled traceback instead of a clean
-  exit code; a `KeyboardInterrupt` during report-writing mislabels a
-  genuinely completed run as "cancelled").
+  bugs and 4 test-quality gaps that coverage alone never surfaces. Two
+  (the `nsga2.py` crowding-distance bug, the negative-seed CLI crash) are
+  fixed as of PR #23/#24; the other 9 are still open. Full details, each
+  with a concrete repro, are recorded in `KNOWN_ISSUES.md` (Open and
+  Resolved sections) -- read that file before starting the next branch
+  instead of re-deriving this list. One of the remaining 9 is still
+  critical: a `KeyboardInterrupt` during report-writing mislabels a
+  genuinely completed run as "cancelled" (fix is small -- add
+  `FINALIZING` to `controller.py`'s `_UNSAFE_TO_CANCEL_STATES` -- but
+  changes observable behavior of a controlled contract file, worth a
+  quick confirm before landing it).
 - Next work: Fix the remaining bugs in `KNOWN_ISSUES.md`'s Open section,
-  starting with the two critical ones (negative-seed CLI crash,
-  KeyboardInterrupt mislabeling a completed run as cancelled), on a new
+  starting with the KeyboardInterrupt/cancelled-mislabeling one, on a new
   `work/YYYY-MM-DD-HHmm-bug-hunt`-style branch. Once those land, older
   possible directions if picked back up: a harder real-worker benchmark
   (Iris's objectives are too correlated to exercise Pareto diversity),

@@ -10,21 +10,6 @@ brought the suite to 99% line/branch coverage with no bugs found. Every
 issue below was independently reproduced by running the actual code, not
 inferred from reading alone.
 
-### `AlgorithmSpec` accepts a negative `seed`; the CLI crashes instead of exiting cleanly
-
-`models.py`'s `AlgorithmSpec.__post_init__` only checks that `seed` is an
-`int`, never its sign. `config_loader.py` therefore accepts
-`"algorithm": {"seed": -1, ...}` as a valid configuration.
-`RandomSearch.__init__`/`NSGA2.__init__` do reject a negative seed, but with
-a bare `ValueError("seed cannot be negative")`, raised from inside
-`create_algorithm()` in `application.py`'s `initialize_application()`. That
-call sits outside any `try` block `cli.py`'s `main()` can catch (its except
-clauses are `KeyboardInterrupt`, `ConfigurationError`, `(OSError,
-ReportingError)` -- a bare `ValueError` matches none of them). Reproduced:
-running `main()` against a real config with `seed=-1` raises
-`ValueError: seed cannot be negative` straight out of `main()` -- no exit
-code is ever returned, the process crashes with a raw traceback.
-
 ### A `KeyboardInterrupt` during report-writing mislabels a completed run as cancelled
 
 `controller.py`'s `_UNSAFE_TO_CANCEL_STATES` covers `EXECUTING` and
@@ -145,6 +130,29 @@ contract's stated intent and what's actually handled. The same narrow
 `except OSError` pattern exists in `_atomic_write_text()`.
 
 ## Resolved
+
+### `AlgorithmSpec` accepted a negative `seed`; the CLI crashed instead of exiting cleanly
+
+`models.py`'s `AlgorithmSpec.__post_init__` only checked that `seed` was an
+`int`, never its sign. `config_loader.py` therefore accepted
+`"algorithm": {"seed": -1, ...}` as a valid configuration.
+`RandomSearch.__init__`/`NSGA2.__init__` did reject a negative seed, but
+with a bare `ValueError("seed cannot be negative")`, raised from inside
+`create_algorithm()` in `application.py`'s `initialize_application()`. That
+call sat outside any `try` block `cli.py`'s `main()` could catch (its
+except clauses are `KeyboardInterrupt`, `ConfigurationError`, `(OSError,
+ReportingError)` -- a bare `ValueError` matched none of them). Reproduced:
+running `main()` against a real config with `seed=-1` raised
+`ValueError: seed cannot be negative` straight out of `main()` -- no exit
+code was ever returned, the process crashed with a raw traceback. Covered
+by `tests/test_models.py::test_algorithm_spec_rejects_negative_seed` and
+`tests/test_config_loader.py::test_rejects_a_negative_seed_as_a_clean_configuration_error`.
+
+PR #24 added the same "seed cannot be negative" check to `AlgorithmSpec`
+itself, the earliest point in the config-driven path, so
+`config_loader.py`'s existing `ValueError` -> `ConfigurationError`
+wrapping catches it for free -- the same clean exit code 2 every other
+malformed config value already gets. Merged into `main` as `faae4d8`.
 
 ### NSGA2 crowding distance was order-dependent when an objective was tied
 
