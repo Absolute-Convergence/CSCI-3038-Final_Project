@@ -104,6 +104,23 @@ class ConfigurationLoaderTests(unittest.TestCase):
         self.assertEqual(configuration.algorithm.name, "nsga2")
         self.assertEqual(configuration.algorithm.seed, 7)
 
+    def test_rejects_a_negative_seed_as_a_clean_configuration_error(
+        self,
+    ) -> None:
+        # Regression test: a negative seed used to survive config loading
+        # entirely and crash the CLI with an unhandled ValueError once
+        # create_algorithm() reached deep inside RandomSearch/NSGA2's own
+        # check, instead of failing here like every other malformed value.
+        document = self.valid_document()
+        document["algorithm"] = {"name": "random_search", "seed": -1}
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "algorithm: seed cannot be negative", caught.exception.issues
+        )
+
     def test_preserves_parameter_and_objective_order(self) -> None:
         configuration = load_configuration(
             self.write_document(self.valid_document())

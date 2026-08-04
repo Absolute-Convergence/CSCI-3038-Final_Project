@@ -42,15 +42,15 @@ does not declare Pillow as a GUI dependency in its package metadata.
 
 ## Audit Evidence
 
-- Updated `main` baseline: 363 tests passed before the package branch was
-  merged with the upstream bug-audit and NSGA-II crowding-distance fix.
-- Merged package tree: 372 tests collected on Windows; 371 pass and one errors
+- Updated `main` baseline: 366 tests passed after PR #24 fixed negative-seed
+  validation and before that change was merged into the package branch.
+- Merged package tree: 374 tests collected on Windows; 373 pass and one errors
   because an invalid configuration path leaks a raw `ValueError`. This new
   Windows-specific defect is recorded in `KNOWN_ISSUES.md`.
-- Known-issue audit: all ten upstream open reports were reproduced on the
-  package branch. Together with the Windows-specific finding, eleven confirmed
-  defects remain open; no PyPI upload is approved while release blockers are
-  unresolved.
+- Known-issue audit: PR #24 correctly fixes the negative-seed CLI crash. The
+  other nine upstream reports remain reproducible on the package branch.
+  Together with the Windows-specific finding, ten confirmed defects remain
+  open; no PyPI upload is approved while release blockers are unresolved.
 - Generated-output barrier: `runs/`, `optimizer_runs/`, and ZDT1 comparison
   results are ignored.
 - Repeated-run test: an older two-trial Pareto front cannot enter a later
