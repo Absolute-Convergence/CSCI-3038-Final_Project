@@ -46,12 +46,32 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 import os
+import subprocess
 import sys
 import threading
 import json
 from pathlib import Path
 from datetime import datetime
 from black_box_optimizer.application import initialize_application
+
+
+def _open_folder(path):
+    """Open `path` in the OS's file manager -- Windows, macOS, and Linux
+    each have their own way to do this, there's no single stdlib call that
+    works on all three (os.startfile only exists on Windows)."""
+    try:
+        if sys.platform == "win32":
+            os.startfile(path)  # Windows-only call, guarded by the check above
+        elif sys.platform == "darwin":
+            subprocess.run(["open", str(path)], check=True)
+        else:
+            subprocess.run(["xdg-open", str(path)], check=True)
+    except Exception as e:
+        messagebox.showerror(
+            "Could Not Open Folder",
+            f"{e}\n\nResults are still saved at:\n{path}",
+        )
+
 
 def get_asset_path(relative_path):
     """Get absolute path to resource relative to this script file"""
@@ -509,7 +529,7 @@ class ConfigApp:
         ttk.Button(
             button_frame,
             text="Open Results Folder",
-            command=lambda: os.startfile(output_dir),
+            command=lambda: _open_folder(output_dir),
         ).pack(side="left", padx=5)
 
         ttk.Button(
