@@ -442,6 +442,16 @@ class FoundationModelTests(unittest.TestCase):
                 name="random_search", seed=True  # type: ignore[arg-type]
             )
 
+    def test_algorithm_spec_rejects_negative_seed(self) -> None:
+        # Previously unchecked here -- a negative seed used to survive
+        # AlgorithmSpec construction and config loading, only to crash the
+        # CLI with an unhandled ValueError once create_algorithm() reached
+        # RandomSearch's/NSGA2's own defensive check. Rejecting it at
+        # construction lets config_loader.py's existing ValueError-to-
+        # ConfigurationError wrapping produce a clean exit code instead.
+        with self.assertRaisesRegex(ValueError, r"seed cannot be negative"):
+            AlgorithmSpec(name="random_search", seed=-1)
+
     def test_stop_policy_rejects_non_integer_max_trials(self) -> None:
         with self.assertRaisesRegex(
             ValueError, r"max_trials must be an integer"
