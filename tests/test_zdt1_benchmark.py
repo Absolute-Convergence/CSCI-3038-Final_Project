@@ -19,8 +19,10 @@ from pathlib import Path
 
 from black_box_optimizer.metrics import read_trial_metrics
 from examples.zdt1_benchmark.compare_search_algorithms import (
+    _quartiles,
     build_argument_parser,
     hypervolume_2d,
+    mann_whitney_u,
     true_zdt1_hypervolume,
 )
 from hyperloop_workers.synthetic_worker import _NUM_VARIABLES, zdt1
@@ -176,6 +178,78 @@ class TrueZdt1HypervolumeTests(unittest.TestCase):
         expected = (0.1 + 2 / 3) + 0.11
         result = true_zdt1_hypervolume((1.1, 1.1), samples=20_000)
         self.assertAlmostEqual(result, expected, places=3)
+
+
+class MannWhitneyUTests(unittest.TestCase):
+    """Verify the hand-rolled Mann-Whitney U test (no scipy dependency)
+    against hand-computable cases.
+
+    Cross-checked interactively against real scipy.stats.mannwhitneyu
+    during development (not a project dependency, so not imported here):
+    the U statistic matched exactly in every case tried, and p-values
+    matched closely once samples were realistically sized (~20 each, the
+    scale a real comparison run actually uses). The two diverge slightly
+    for tiny samples, where scipy defaults to an exact permutation test
+    instead of the normal approximation used here -- expected and
+    documented in mann_whitney_u()'s own docstring.
+    """
+
+    def test_fully_separated_samples_give_the_minimum_u_statistic(
+        self,
+    ) -> None:
+        # Every value in the first sample is below every value in the
+        # second, so it "wins" all 3*3=9 pairwise comparisons -- the
+        # minimum possible U for it is 0, the strongest possible signal.
+        u_statistic, p_value = mann_whitney_u([1, 2, 3], [4, 5, 6])
+        self.assertEqual(u_statistic, 0.0)
+        self.assertLess(p_value, 0.10)
+
+    def test_ties_within_and_across_samples_average_correctly(self) -> None:
+        # Hand-computed: combined sorted values are 1,1,2,2,3,3,3,4,4,5
+        # (positions 1-10). The two 1's share ranks 1-2 (avg 1.5), the
+        # two 2's share ranks 3-4 (avg 3.5), the three 3's share ranks
+        # 5-7 (avg 6), the two 4's share ranks 8-9 (avg 8.5), the 5 is
+        # rank 10. First sample [1,1,2,2,3] -> rank sum
+        # 1.5+1.5+3.5+3.5+6 = 16. U = 16 - 5*6/2 = 16 - 15 = 1.
+        u_statistic, _p_value = mann_whitney_u(
+            [1, 1, 2, 2, 3], [3, 3, 4, 4, 5]
+        )
+        self.assertEqual(u_statistic, 1.0)
+
+    def test_identical_distributions_are_not_significant(self) -> None:
+        sample = [0.1 * i for i in range(1, 21)]
+        _u_statistic, p_value = mann_whitney_u(sample, list(sample))
+        self.assertEqual(p_value, 1.0)
+
+    def test_clearly_separated_realistic_scale_samples_are_significant(
+        self,
+    ) -> None:
+        # 20-per-group, non-overlapping ranges -- the scale and shape of
+        # a real comparison run, where the normal approximation used
+        # here is expected to be accurate.
+        lower = [0.01 * i for i in range(1, 21)]
+        higher = [0.01 * i + 0.5 for i in range(1, 21)]
+        _u_statistic, p_value = mann_whitney_u(lower, higher)
+        self.assertLess(p_value, 0.001)
+
+    def test_p_value_is_symmetric_in_argument_order(self) -> None:
+        sample_a = [1, 2, 3, 4, 5]
+        sample_b = [2, 3, 4, 5, 6]
+        _u_a, p_ab = mann_whitney_u(sample_a, sample_b)
+        _u_b, p_ba = mann_whitney_u(sample_b, sample_a)
+        self.assertAlmostEqual(p_ab, p_ba)
+
+
+class QuartilesTests(unittest.TestCase):
+    def test_single_value_has_no_spread(self) -> None:
+        self.assertEqual(_quartiles([5.0]), (5.0, 5.0))
+
+    def test_matches_hand_computed_quartiles(self) -> None:
+        # statistics.quantiles([1,2,3,4], n=4) uses the exclusive method:
+        # Q1=1.25, Q3=3.75.
+        first_quartile, third_quartile = _quartiles([1.0, 2.0, 3.0, 4.0])
+        self.assertAlmostEqual(first_quartile, 1.25)
+        self.assertAlmostEqual(third_quartile, 3.75)
 
 
 if __name__ == "__main__":

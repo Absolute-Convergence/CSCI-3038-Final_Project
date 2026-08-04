@@ -214,21 +214,9 @@ Files it actually leverages, confirmed by import:
 
 # Current limitations
 
-This implementation is actually not ~technically~ a canonical NSGA-II. The proper
-implementation of the algorithm requires elitism, which is missing here.
-
-Right now, one completed generation breeds the next generation directly.
-
-```text
-generation N
-      ↓
-rank + breed
-      ↓
-generation N + 1
-```
-
-Standard NSGA-II instead combines the parent and offspring populations,
-ranks the combined population, and keeps only the best survivors.
+Standard NSGA-II combines the parent and offspring populations, ranks the
+combined population, and keeps only the best survivors, rather than letting
+one completed generation breed the next directly.
 
 ```text
 parents
@@ -243,15 +231,19 @@ non-dominated sorting
 best N survive
 ```
 
-That elitist survival step hasn't been implemented yet. The current implementation 
-also keeps its pending child queue entirely in memory. If the process crashes halfway 
-through a generation, any children still in the queue are lost.(That isn't unique to 
-this algorithm, since the project currently doesn't persist the internal state of 
-random search either)
+That elitist survival step is implemented: `NSGA2` tracks the surviving
+parent population's trial IDs between calls to `propose()`, and each new
+generation is bred from `_select_survivors()` over the combined
+parent-plus-offspring pool rather than from the offspring alone.
 
-Most of the implementation was verified through development and manual
-testing, but there isn't yet a `test_nsga2.py` covering the ranking,
-selection, mutation, and generation-management logic.
+The current implementation still keeps its pending child queue entirely in
+memory. If the process crashes halfway through a generation, any children
+still in the queue are lost. (That isn't unique to this algorithm, since the
+project currently doesn't persist the internal state of random search
+either.)
+
+The ranking, selection, mutation, survivor-selection, and
+generation-management logic is covered by `tests/test_nsga2.py`.
 
 ---
 
@@ -259,16 +251,6 @@ selection, mutation, and generation-management logic.
 
 None of these are required for the current implementation to work. They're
 just ideas that would make it more complete.
-
-## Canonical NSGA-II elitism
-
-Retain the previous parent population.
-
-After evaluating a generation, combine parents and offspring, rank the
-combined population, and keep the best `population_size` survivors.
-
-This is the single biggest remaining difference between the shipped
-implementation and real NSGA-II.
 
 ## Better finite-space handling
 

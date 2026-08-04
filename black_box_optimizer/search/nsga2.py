@@ -1,85 +1,26 @@
 """
 nsga2.py
 
-An NSGA-II (Non-dominated Sorting Genetic Algorithm II) search algorithm.
+An optional, updated, and totally Emilyfied NSGA-II search algorithm.
 
-This is a pure additional search option. It is registered next to
-RandomSearch in search/registry.py and its not intended to act as any
-kind of replacement for it.
+RandomSearch starts fresh every time propose() is called but NSGA2 learns
+from completed trials (nice!) by working in generations:
 
-It follows the same protocol RandomSearch already follows and is selected
-by name in AlgorithmSpec!
+    1. Build a generation of candidates
+    2. Let the controller run them one at a time
+    3. Rank the results using Pareto dominance
+    4. Prefer stronger and less crowded candidates as parents
+    5. Breed and mutate the next generation
 
-============================================================================
-THE LONG AND SKINNY
-============================================================================
+The controller still asks for one singlet candidate at a time, so this
+class keeps the rest of each generation in self._pending_children until
+they're needed. TrialHistory remains the real record of completed work!
 
-RandomSearch chooses a completely new random candidate every time propose()
-is called. It does not care what happened during any previous trial.
-
-NSGA-II works in generations instead:
-
-    1. Create a batch of `population_size` candidates.
-
-       The first generation is random because there are no completed
-       trials to learn from yet.
-
-    2. Let the controller run each candidate normally.
-
-       This file does not change worker execution. Trials still run one at
-       a time exactly as they do with RandomSearch.
-
-    3. Once the whole generation has results, rank the candidates using
-       Pareto dominance.
-
-       This uses the same underlying idea as pareto.py: a candidate is
-       better when it is no worse on every objective and strictly better
-       on at least one.
-
-    4. Prefer better-ranked candidates when choosing parents.
-
-    5. Breed a new generation by mixing parent parameter values together
-       and occasionally mutating them.
-
-    6. Run the new generation and repeat.
-
-So instead of guessing blindly for the entire run, each new generation is
-influenced by the results of the generation before it!
-
-============================================================================
-WHY THIS CLASS MUST-MUST KEEP SOME INTERNAL STATE
-============================================================================
-
-The SearchAlgorithm protocol only asks for a single candidate at a time via:
-
-    propose(contract, history)
-
-Which makes perfect sense for the controller. It asks for one candidate,
-runs one trial, adds the result to history, and asks again, excellent!
-
-NSGA-II is meant to be batch-shaped, though, meaning it ranks a whole
-completed generation and then breeds a whole new generation from it.
-
-That leaves us with a mismatch:
-
-    NSGA-II wants to produce a batch.
-    The controller only wants one candidate.
-
-The solution is self._pending_children.
-
-Here is my solution: Whenever a new generation is created, all of its
-candidates are placed in that queue. propose() then returns them
-one at a time until the queue isempty. Once it is empty, the
-algorithm knows it is time to create another generation.
-
-TrialHistory is still the real record of what actually happened.
-So, self._pending_children only remembers candidates the algorithm has
-already created but has not handed to the controller yet.
-
-That queue is not persisted so if the program crashes, any children
-still waiting in it are lost. This project does not currently persist
-the internal state of any search algorithm, including RandomSearch,
-so that is consistent across the board anyhow.
+Our NSGA2 is now elitist, so the strong parents may survive alongside newer
+offspring and the self._current_population_ids was created to remember
+which completed trials are still part of the current parent population.
+Neither piece of internal state is persisted, which totally matches the rest
+of the project's search algorithm standardz!
 """
 
 from __future__ import annotations
@@ -93,6 +34,7 @@ import numpy as np
 from black_box_optimizer.models import (
     CandidateConfiguration,
     OptimizationContract,
+    ParameterKind,
 )
 from black_box_optimizer.pareto import build_pareto_front, is_eligible
 from black_box_optimizer.records import TrialRecord
@@ -103,26 +45,12 @@ from black_box_optimizer.search.random_search import (
     candidate_key,
 )
 
-# Genetic operations can sometimes keep producing candidates that have
-# already been tried so we need a stopping point to make sure the
-# algorithm cannot retry forever in a small or mostly exhausted
-# search space
-#
-# This matches the same documented limit already used by RandomSearch
+# Breeding can keep rediscovering old candidates, so retries need a limit
+# This matches the existing duplicate rule for random search
 _MAX_DUPLICATE_ATTEMPTS = 100
 
-# NSGA-II needs enough candidates in each generation to have some kinda
-# variety, but a giant population would make zero sense for this project
-# since we are building with NN training in mind....bigger population ==
-# more worker runtime, duh
-#
-# The example configurations often use dinky winky trial limits so if a
-# generation had 20 candidates and max_trials was also 20, the algorithm
-# would spend the entire run creating its first random generation and
-# never get to do any evolution
-#
-# Four gives us enough candidates to rank and breed. Ten keeps one
-# generation from eating the entire trial budget!
+# Four give enough variety to rank and breed and ten keeps
+# one generation from swallowing a tiny trial budget whole
 _MIN_POPULATION_SIZE = 4
 _MAX_POPULATION_SIZE = 10
 
@@ -131,25 +59,11 @@ def _default_population_size(
     contract: OptimizationContract,
     finite_size: int | None,
 ) -> int:
-    """Choose a population size based on the number of parameters.
+    """Choose a practical population size for this contract.
 
-    The project spec does not define a population size because NSGA-II is
-    outside the original MVP. This is our own design choice.
-
-    The normal rule starts with two candidates per parameter, with a
-    minimum of four and a maximum of ten.
-
-    There is one important exception for small finite spaces.
-
-    I found this by actually testing a contract with one categorical
-    parameter and only two possible values. The normal minimum population
-    size would be four, but it is obviously impossible to create four
-    unique candidates from a search space containing only two candidates.
-
-    Clamping the population size to finite_size prevents that situation.
-    Without it, the first proposal would fail with proposal_failed even
-    though the honest result is simply that the complete space contains
-    fewer than four candidates.
+    The default is two candidates per parameter, clamped between four and
+    ten. Small finite spaces are clamped again so we never ask for more
+    unique candidates than actually exist.
     """
     population_size = max(
         _MIN_POPULATION_SIZE,
@@ -161,39 +75,15 @@ def _default_population_size(
 
 
 def _default_mutation_rate(contract: OptimizationContract) -> float:
-    """Choose the chance that any one parameter will mutate.
-
-    A common genetic-algorithm starting point is to mutate roughly one
-    parameter per child on average. Giving every parameter a probability
-    of 1 / number_of_parameters gets us that behavior.
-
-    This is another documented NSGA-II design choice, not a value required
-    by the original project spec.
-    """
+    """Choose a rate that mutates about one parameter per child."""
     return 1.0 / len(contract.parameters)
 
 
 class _RankedIndividual(NamedTuple):
-    """Bundle a completed trial with its NSGA-II ranking information.
+    """Keep one trial together with its rank and crowding distance.
 
-    This is only used inside this file to make tournament selection easier
-    to read.
-
-    rank:
-        Lower is better. Rank 0 is the real Pareto front, meaning nobody
-        else in the generation dominates that candidate. Rank 1 is the
-        next layer, then rank 2, and so on.
-
-        Failed or otherwise ineligible trials get one shared worst rank
-        after every real rank.
-
-    crowding_distance:
-        Measures how different this candidate's objective values are from
-        nearby candidates in the same rank.
-
-        Higher is better because NSGA-II wants to preserve different
-        tradeoffs instead of filling the population with nearly identical
-        results.
+    Lower rank is better. Higher crowding distance is better within the
+    same rank because it preserves a wider variety of tradeoffs.
     """
 
     record: TrialRecord
@@ -205,44 +95,12 @@ def _rank_population(
     generation: Sequence[TrialRecord],
     contract: OptimizationContract,
 ) -> list[_RankedIndividual]:
-    """Rank one completed generation by Pareto tier and crowding distance.
+    """Rank completed trials by Pareto tier and crowding distance.
 
-    This is the non-dominated sorting part of NSGA-II.
-
-    We do not need to rewrite the project's dominance logic here.
-    pareto.build_pareto_front() already knows how to find the records that
-    are not dominated by anything else.
-
-    We can reuse it repeatedly:
-
-        rank 0 = the Pareto front of the entire generation
-        rank 1 = the Pareto front after rank 0 is removed
-        rank 2 = the Pareto front after ranks 0 and 1 are removed
-
-    We continue peeling off layers until every eligible record has a rank.
-
-    FAILURE HANDLING
-
-    A TrialRecord is not guaranteed to contain usable objective metrics.
-    A process can fail, time out, fail to launch, omit its metrics file, or
-    write malformed metrics. Those are expected outcomes elsewhere in the
-    project, not weird impossible states.
-
-    We cannot compare a failed trial using Pareto dominance because it has
-    no real objective values. We also should not silently remove it,
-    because it still occupied one slot in this generation.
-
-    Every ineligible trial therefore receives:
-
-        rank = one rank worse than the last real Pareto tier
-        crowding_distance = 0.0
-
-    This makes failed trials lose against every successful trial during
-    parent selection without inventing fake metric values or changing the
-    original TrialRecord.
-
-    Nothing returned here is written back into history. These ranks only
-    exist for this one selection step.
+    We repeatedly peel off Pareto fronts using the project's existing
+    dominance logic. Failed or otherwise ineligible trials cannot be fairly
+    compared, so they share one worst rank with zero crowding distance.
+    These temporary rankings are never written back into history.
     """
     eligible = [
         record for record in generation if is_eligible(record, contract)
@@ -251,9 +109,9 @@ def _rank_population(
         record for record in generation if not is_eligible(record, contract)
     ]
 
-    # Find one Pareto layer, get rid of it, and repeat on whatever is left
-    # so this lets us sneaky reuse the projects tested Pareto logic instead
-    # of creating a second version of the same comparison
+    # Peel off one Pareto layer at a time instead of rewriting dominance
+    # Like an onion
+    # ...or an ogre
     tiers: list[tuple[TrialRecord, ...]] = []
     remaining = list(eligible)
     while remaining:
@@ -279,10 +137,7 @@ def _rank_population(
                 )
             )
 
-    # Ineligible trials all share the rank immediately after the final real
-    # tier meaning if every trial failed, there are no real tiers so their rank is
-    # 0.....they'll still be tied for worst because there is nothing successful for
-    # them to rank behind
+    # Failed trials share the rank immediately after the final real tier.
     worst_rank = len(tiers)
     for record in ineligible:
         ranked.append(
@@ -294,37 +149,39 @@ def _rank_population(
     return ranked
 
 
+def _select_survivors(
+    combined_records: Sequence[TrialRecord],
+    contract: OptimizationContract,
+    population_size: int,
+) -> list[TrialRecord]:
+    """Keep the best records from the combined parent and child pool.
+
+    Lower Pareto rank wins, then higher crowding distance. This is the
+    elitism step that lets strong parents survive into later generations.
+    """
+    ranked = _rank_population(combined_records, contract)
+    ranked.sort(
+        key=lambda individual: (
+            individual.rank,
+            -individual.crowding_distance,
+        )
+    )
+    return [individual.record for individual in ranked[:population_size]]
+
+
 def _crowding_distances(
     tier_records: Sequence[TrialRecord],
     contract: OptimizationContract,
 ) -> dict[int, float]:
-    """Calculate crowding distance for every record in one Pareto tier.
+    """Measure how isolated each record is within one Pareto tier.
 
-    Rank tells us how good a candidate is compared with the rest of the
-    generation. Crowding distance answers a different question:
-
-        Does this candidate represent a distinct tradeoff, or is it packed
-        into a cluster of almost identical results?
-
-    For each objective, the records are sorted by that metric. The record
-    at each end is a boundary candidate and gets infinite distance so the
-    algorithm preserves the edges of the tradeoff range.
-
-    Everyone between those boundaries receives the normalized gap between
-    the neighboring metric values.
-
-    Distances from every objective are added together. A larger total means
-    the candidate is in a less crowded part of the tier.
-
-    Objective direction does not matter here. Whether an objective is
-    minimized or maximized mattered when ranks were assigned. At this point
-    we only care how far apart the values are.
+    Boundary records get infinite distance so the edges survive. Interior
+    records collect normalized gaps from each objective. Higher distance
+    means a less crowded and therefore more useful tradeoff.
     """
     distances = {record.trial_id: 0.0 for record in tier_records}
 
-    # With at most two records, everyone is already on the boundary
-    # There is no interior point whose neighboring distance could
-    # be measured
+    # With two or fewer records, everybody is already on the boundary.
     if len(tier_records) <= 2:
         for record in tier_records:
             distances[record.trial_id] = float("inf")
@@ -340,25 +197,17 @@ def _crowding_distances(
 
         objective_range = maximum_value - minimum_value
         if objective_range == 0:
-            # Everyone has the same value for this objective so it can't
-            # tell us anything about how spread out the candidates are,
-            # and it also cannot be used as a divisor. Skip it entirely --
-            # marking sorted_tier[0]/[-1] as boundary here would just be
-            # picking whichever records happen to land first/last in
-            # tier_records' input order, not real extremes, since a tie
-            # means there's no genuine boundary on this objective at all.
+            # A tied objective adds no spacing information and cannot divide
             continue
 
-        # The smallest and largest values define this tier's boundary for
-        # the current objective, so both are always preserved.
+        # This preserves both ends of this objectives tradeoff range
         distances[sorted_tier[0].trial_id] = float("inf")
         distances[sorted_tier[-1].trial_id] = float("inf")
 
         for index in range(1, len(sorted_tier) - 1):
             trial_id = sorted_tier[index].trial_id
             if distances[trial_id] == float("inf"):
-                # This record was already a boundary on another objective
-                # and a finite value to infinity would not change it.
+                # Its already a boundary somewhere else, so infinity wins.
                 continue
 
             previous_value = sorted_tier[index - 1].metrics[
@@ -377,14 +226,8 @@ def _tournament_select(
 ) -> _RankedIndividual:
     """Choose one parent using a two-candidate tournament.
 
-    Pick two random individuals and compare them:
-
-        1. Lower rank wins.
-        2. If the ranks match, higher crowding distance wins.
-        3. If both values match, either one is equally reasonable.
-
-    Rank keeps selection focused on good results. Crowding distance keeps
-    the population from collapsing into one tiny area of the Pareto front.
+    Lower rank wins. Ties go to higher crowding distance, which keeps the
+    search from collapsing into one tiny corner of the Pareto front.
     """
     first_index, second_index = generator.choice(
         len(ranked_population), size=2, replace=False
@@ -402,8 +245,7 @@ def _tournament_select(
             else second
         )
 
-    # At this point they're literally tied so we just default to
-    # the first one instead of gettin fancy
+    # Fully tied, so the first one wins no need to get fancy
     return first
 
 
@@ -413,21 +255,10 @@ def _crossover(
     contract: OptimizationContract,
     generator: np.random.Generator,
 ) -> dict[str, object]:
-    """Mix two parents together one parameter at a time.
+    """Build a child by taking each parameter from either parent.
 
-    This uses uniform crossover. For every parameter, the child has a
-    50/50 chance of inheriting the value from either parent.
-
-    There are more complicated crossover methods for numeric values, but
-    this is the simplest one that works the same way for every parameter
-    kind supported by the project.
-
-    FLOAT and INTEGER values could technically be blended together.
-    CATEGORICAL values cannot. There is no meaningful mathematical average
-    between two category names.
-
-    Choosing one parent's complete value works correctly for FLOAT,
-    INTEGER, and CATEGORICAL parameters without separate crossover rules.
+    Uniform crossover is simple and works for numeric and categorical
+    parameters without separate rules.
     """
     child_parameters: dict[str, object] = {}
     for parameter in contract.parameters:
@@ -442,30 +273,73 @@ def _crossover(
     return child_parameters
 
 
+# Higher values keep polynomial mutations closer to the original value
+# Twenty is the standard default for this algo they say
+_POLYNOMIAL_MUTATION_ETA = 20.0
+
+
+def _polynomial_mutate_value(
+    value: object,
+    parameter,
+    generator: np.random.Generator,
+) -> object:
+    """Nudge one numeric value without fully replacing it.
+
+    Polynomial mutation stays inside the parameter bounds. INTEGER values
+    are rounded and clamped again afterward.
+    """
+    lower = float(parameter.minimum)
+    upper = float(parameter.maximum)
+    if upper == lower:
+        return value
+
+    x = float(value)
+    delta1 = (x - lower) / (upper - lower)
+    delta2 = (upper - x) / (upper - lower)
+    u = generator.random()
+    mutation_power = 1.0 / (_POLYNOMIAL_MUTATION_ETA + 1.0)
+
+    if u <= 0.5:
+        xy = 1.0 - delta1
+        val = 2.0 * u + (1.0 - 2.0 * u) * (
+            xy ** (_POLYNOMIAL_MUTATION_ETA + 1.0)
+        )
+        delta_q = val**mutation_power - 1.0
+    else:
+        xy = 1.0 - delta2
+        val = 2.0 * (1.0 - u) + 2.0 * (u - 0.5) * (
+            xy ** (_POLYNOMIAL_MUTATION_ETA + 1.0)
+        )
+        delta_q = 1.0 - val**mutation_power
+
+    mutated_value = min(max(x + delta_q * (upper - lower), lower), upper)
+
+    if parameter.kind == ParameterKind.INTEGER:
+        mutated_value = min(max(round(mutated_value), int(lower)), int(upper))
+        return int(mutated_value)
+    return mutated_value
+
+
 def _mutate(
     parameters: dict[str, object],
     contract: OptimizationContract,
     generator: np.random.Generator,
     mutation_rate: float,
 ) -> dict[str, object]:
-    """Randomly replace some parameter values with newly sampled values.
+    """Mutate some parameters so the search can still discover new values.
 
-    Crossover can only rearrange values that already exist in the parent
-    population. Without mutation, a value that disappears from the
-    population is gone forever, and a completely new value can never enter.
-
-    Mutation keeps a controlled amount of randomness in the search so it
-    can still explore new parts of the parameter space.
-
-    This reuses random_search.py's _sample_value() function instead of
-    creating another sampler here. That function already handles FLOAT,
-    INTEGER, and CATEGORICAL parameters, including the NumPy object-dtype
-    fix needed for mixed categorical values.
+    Numeric values get a nearby polynomial mutation. Categories have no
+    meaningful notion of nearby, so they receive a fresh random draw.
     """
     mutated = dict(parameters)
     for parameter in contract.parameters:
         if generator.random() < mutation_rate:
-            mutated[parameter.name] = _sample_value(generator, parameter)
+            if parameter.kind == ParameterKind.CATEGORICAL:
+                mutated[parameter.name] = _sample_value(generator, parameter)
+            else:
+                mutated[parameter.name] = _polynomial_mutate_value(
+                    mutated[parameter.name], parameter, generator
+                )
     return mutated
 
 
@@ -474,14 +348,9 @@ def _sample_new_random_candidate(
     generator: np.random.Generator,
     forbidden_keys: set,
 ) -> CandidateConfiguration | None:
-    """Create one random candidate that has not already been used.
+    """Create one unused random candidate for generation 0.
 
-    Generation 0 cannot be bred because there are no completed candidates
-    to use as parents yet. It is seeded with random candidates instead.
-
-    A sampled candidate may collide with one already in history or another
-    candidate created for the same batch. We retry up to the documented
-    duplicate-attempt limit and return None if no new candidate is found.
+    Retry boundedly when a sample collides with history or this batch.
     """
     for _ in range(_MAX_DUPLICATE_ATTEMPTS):
         parameters = {
@@ -503,15 +372,10 @@ def _breed_one_child(
     mutation_rate: float,
     forbidden_keys: set,
 ) -> CandidateConfiguration | None:
-    """Select two parents and try to create one unused child.
+    """Breed one child that has not already been tried.
 
-    Crossover can easily recreate one of its parents, especially when the
-    contract only contains a few parameters. Mutation can also randomly
-    produce a combination that has already been tried.
-
-    Because duplicate children are possible, breeding uses the same bounded
-    retry strategy as random candidate sampling. It returns None if it
-    cannot produce a new candidate within the allowed number of attempts.
+    Crossover and mutation can still create duplicates, so retries are
+    bounded just like random sampling.
     """
     for _ in range(_MAX_DUPLICATE_ATTEMPTS):
         parent_a = _tournament_select(ranked_population, generator).record
@@ -531,21 +395,10 @@ def _breed_one_child(
 
 
 class NSGA2:
-    """An NSGA-II search algorithm using the project's existing protocol.
-
-    The algorithm plans candidates in generations internally, but propose()
-    still returns exactly one candidate at a time, just like RandomSearch.
-
-    Construct it with a seed and call:
-
-        propose(contract, history)
-
-    Nothing about the controller's use of a SearchAlgorithm changes.
-    """
+    """NSGA-II adapted to the project's one-candidate-at-a-time protocol."""
 
     def __init__(self, seed: int) -> None:
-        # Keeps the validation consistent with RandomSearch so invalid seeds
-        # produce a clear project error instead of just a NumPy error
+        # Match RandomSearch's validation and keep NumPy errors out of sight.
         if isinstance(seed, bool) or not isinstance(seed, int):
             raise ValueError("seed must be an integer")
         if seed < 0:
@@ -553,16 +406,15 @@ class NSGA2:
 
         self._generator = np.random.default_rng(seed)
 
-        # These depend on the OptimizationContract, which is not available
-        # in __init__ so these are calculated during the first propose() call
-        # and reused afterward...which is fine becasue the contract does not
-        # change mid-run
+        # These need the contract, so calculate them on the first proposal
         self._population_size: int | None = None
         self._mutation_rate: float | None = None
 
-        # A generation is bred all at once, but the controller only needs
-        # one candidate at a time...this queue holds the rest
+        # The controller wants one singlet child at a time so the rest wait here
         self._pending_children: deque[CandidateConfiguration] = deque()
+
+        # Elitism can keep older winners around so remember their trial IDs
+        self._current_population_ids: set[int] = set()
 
     def propose(
         self,
@@ -570,9 +422,7 @@ class NSGA2:
         history: Sequence[TrialRecord],
     ) -> ProposalResult:
         """Return the next candidate, creating a generation when necessary."""
-        # We need finite_size for the exhaustion check on every call...on the
-        # first call it also prevents the population from being any larger than
-        # the possible search space
+        # finite_size handles exhaustion and caps tiny search spaces
         finite_size = _finite_space_size(contract)
 
         if self._population_size is None:
@@ -582,12 +432,10 @@ class NSGA2:
             self._mutation_rate = _default_mutation_rate(contract)
 
         population_size = self._population_size
-        # Both are assigned together above.
+        # Both are assigned together above
         assert self._mutation_rate is not None
 
-        # A generation has already been created and still has candidates
-        # waiting, this returns the next one instead of breeding a new
-        # batch
+        # Finish handing out the current generation before breeding another
         if self._pending_children:
             return ProposalResult(
                 status="candidate", candidate=self._pending_children.popleft()
@@ -600,35 +448,45 @@ class NSGA2:
             for record in history
         }
 
-        # In a finite space, reaching every possible candidate means the
-        # search is finished, genetic operations can't invent a legal
-        # combination outside the contract.
+        # Genetic operations cannot invent candidates outside the contract
         if finite_size is not None and len(attempted_keys) >= finite_size:
             return ProposalResult(status="search_exhausted")
 
         if not history:
-            # There are no completed trials to rank or use as parents yet
-            # so generation 0 has gots to be random!
+            # No parents yet, so generation 0 has gots to be random
             batch = self._breed_random_generation(
                 contract, attempted_keys, population_size
             )
         else:
-            # Each trial occupies one history slot whether no matter if it
-            # succeeded or failed, so the most recent population_size
-            # records represent the generation that just finished
-            generation = history[-population_size:]
+            # The newest population_size records are this round's offspring
+            # including any failed trials that still occupied a slot
+            latest_offspring = history[-population_size:]
+
+            # Let old winners compete with the newest offspring then keep
+            # only the strongest population_size records
+            surviving_parents = [
+                record
+                for record in history
+                if record.trial_id in self._current_population_ids
+            ]
+            combined_pool = surviving_parents + list(latest_offspring)
+            parent_population = _select_survivors(
+                combined_pool, contract, population_size
+            )
+            self._current_population_ids = {
+                record.trial_id for record in parent_population
+            }
+
             batch = self._breed_next_generation(
                 contract,
-                generation,
+                parent_population,
                 attempted_keys,
                 population_size,
                 self._mutation_rate,
             )
 
         if batch is None:
-            # The algorithm used all allowed retries without assembling a
-            # complete batch of unique candidates to follow the same
-            # proposal_failed convention used by RandomSearch!
+            # We ran out of duplicate retries before finishing the batch
             return ProposalResult(
                 status="proposal_failed",
                 reason=(
@@ -650,9 +508,7 @@ class NSGA2:
         population_size: int,
     ) -> list[CandidateConfiguration] | None:
         """Create the random, unique candidates used for generation 0."""
-        # We use a copy because forbidden_keys also needs to include candidates
-        # created during this batch - so important because we need to make sure no
-        # duplicates even if they aren't in history yet
+        # Include this batch too since its candidates aren't in history yet
         forbidden_keys = set(attempted_keys)
 
         batch: list[CandidateConfiguration] = []
@@ -671,16 +527,15 @@ class NSGA2:
     def _breed_next_generation(
         self,
         contract: OptimizationContract,
-        generation: Sequence[TrialRecord],
+        parent_population: Sequence[TrialRecord],
         attempted_keys: set,
         population_size: int,
         mutation_rate: float,
     ) -> list[CandidateConfiguration] | None:
-        """Rank one completed generation and breed its children."""
-        ranked_population = _rank_population(generation, contract)
+        """Rank the current survivors and breed the next generation."""
+        ranked_population = _rank_population(parent_population, contract)
 
-        # Children need to be unique against both history and also the
-        # other children being created for this same generation!
+        # Children must! be unique against both history! and this new batch!
         forbidden_keys = set(attempted_keys)
 
         batch: list[CandidateConfiguration] = []
@@ -699,6 +554,5 @@ class NSGA2:
             forbidden_keys.add(candidate_key(contract, child))
 
         return batch
-
 
     # Tadaaaa! Emily's fancy algorithm!
