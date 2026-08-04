@@ -31,6 +31,7 @@ def execute(
     process: subprocess.Popen[str] | None = None
 
     try:
+
         process = subprocess.Popen(
             command,
             shell=False,
@@ -62,6 +63,7 @@ def execute(
         stdout, stderr = process.communicate(
             timeout=worker_spec.timeout_seconds
         )
+
     except subprocess.TimeoutExpired as error:
         stdout, stderr = _terminate_and_collect(process)
         stdout = stdout or _output_text(error.output)

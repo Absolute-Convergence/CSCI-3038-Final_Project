@@ -2,7 +2,7 @@
   "worker": {
     "command": [
       "python",
-      "examples/iris_torch/iris_worker.py"
+      "examples\\iris_torch\\iris_worker.py"
     ],
     "metrics_argument": "--metrics-out",
     "timeout_seconds": 120.0
@@ -43,10 +43,6 @@
         "direction": "maximize"
       },
       {
-        "metric_name": "validation_loss",
-        "direction": "minimize"
-      },
-      {
         "metric_name": "training_time_seconds",
         "direction": "minimize"
       }
@@ -57,6 +53,6 @@
     "seed": 42
   },
   "stop_policy": {
-    "max_trials": 20
+    "max_trials": 5
   }
 }

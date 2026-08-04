@@ -130,11 +130,12 @@ class ConfigApp:
         frame = ttk.LabelFrame(self.scrollable_frame, text="Worker Configuration", padding=10)
         frame.pack(fill="x", pady=5)
         
-        ttk.Label(frame, text="Command (comma separated):").grid(row=0, column=0, sticky="w")
+        ttk.Label(frame, text="Worker file path").grid(row=0, column=0, sticky="w")
         self.cmd_entry = ttk.Entry(frame, width=40)
         self.cmd_entry.insert(
             0,
-            "python, examples/iris_torch/iris_worker.py",
+            #"python, examples/iris_torch/iris_worker.py",
+            "iris_worker.py"
         )
         self.cmd_entry.grid(row=0, column=1, pady=2)
         
@@ -165,6 +166,8 @@ class ConfigApp:
         
         self.add_parameter_row("learning_rate", "float", "0.0001", "0.1")
         self.add_parameter_row("hidden_size", "integer", "4", "128")
+        self.add_parameter_row("epochs", "integer", 5, 100)
+        self.add_parameter_row("batch_size", "categorical", "8, 16, 32")
 
     def add_parameter_row(self, name="", kind="float", p_min="", p_max=""):
         row_frame = ttk.Frame(self.param_frame)
@@ -212,7 +215,7 @@ class ConfigApp:
         add_btn.pack(anchor="w", pady=5)
         
         self.add_objective_row("validation_accuracy", "maximize")
-        self.add_objective_row("validation_loss", "minimize")
+        self.add_objective_row("training_time_seconds", "minimize")
 
     def add_objective_row(self, name="", direction="maximize"):
         row_frame = ttk.Frame(self.obj_frame)
@@ -237,8 +240,9 @@ class ConfigApp:
         frame.pack(fill="x", pady=5)
         
         ttk.Label(frame, text="Algorithm Name:").grid(row=0, column=0, sticky="w")
-        self.algo_entry = ttk.Entry(frame, width=20)
-        self.algo_entry.insert(0, "random_search")
+        algorithms = ["random_search", "nsga2"]
+        self.algo_entry = ttk.Combobox(frame, values=algorithms, width=20)
+        self.algo_entry.current(0)
         self.algo_entry.grid(row=0, column=1, pady=2, sticky="w")
         
         ttk.Label(frame, text="Seed:").grid(row=1, column=0, sticky="w")
@@ -284,7 +288,7 @@ class ConfigApp:
     def build_config_dict(self):
         """Build the optimizer configuration dictionary."""
 
-        cmd = [c.strip() for c in self.cmd_entry.get().split(",")]
+        cmd = ["python", os.path.join("examples", "iris_torch", self.cmd_entry.get().strip())]
         timeout = float(self.timeout_entry.get())
 
         params_out = []
