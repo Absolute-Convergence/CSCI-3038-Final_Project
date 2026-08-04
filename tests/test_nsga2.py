@@ -304,6 +304,29 @@ class CrowdingDistanceTests(unittest.TestCase):
         self.assertEqual(distances[2], float("inf"))
         self.assertEqual(distances[1], 1.0)
 
+    def test_tied_objective_never_marks_a_boundary_regardless_of_input_order(
+        self,
+    ) -> None:
+        # Real bug, since fixed: boundary marking used to happen before
+        # the tied-objective check, so a tied objective would mark
+        # whichever records landed first/last in tier_records -- an
+        # accident of input order, not a real extreme -- as infinite.
+        # Feeding the same four records in two different orders must
+        # produce identical distances; only loss (not tied) should ever
+        # contribute a boundary or a gap here.
+        p = make_trial_record(0, {}, metrics={"accuracy": 0.5, "loss": 0.1})
+        q = make_trial_record(1, {}, metrics={"accuracy": 0.5, "loss": 0.4})
+        r = make_trial_record(2, {}, metrics={"accuracy": 0.5, "loss": 0.6})
+        s = make_trial_record(3, {}, metrics={"accuracy": 0.5, "loss": 0.9})
+        contract = make_contract(*make_parameters(1))
+
+        first_order = _crowding_distances((r, p, s, q), contract)
+        second_order = _crowding_distances((p, q, r, s), contract)
+
+        expected = {0: float("inf"), 1: 0.625, 2: 0.625, 3: float("inf")}
+        self.assertEqual(first_order, expected)
+        self.assertEqual(second_order, expected)
+
     def test_a_boundary_point_on_one_objective_short_circuits_on_the_next(
         self,
     ) -> None:

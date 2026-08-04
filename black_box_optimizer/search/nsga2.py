@@ -338,17 +338,21 @@ def _crowding_distances(
         minimum_value = sorted_tier[0].metrics[objective.metric_name]
         maximum_value = sorted_tier[-1].metrics[objective.metric_name]
 
+        objective_range = maximum_value - minimum_value
+        if objective_range == 0:
+            # Everyone has the same value for this objective so it can't
+            # tell us anything about how spread out the candidates are,
+            # and it also cannot be used as a divisor. Skip it entirely --
+            # marking sorted_tier[0]/[-1] as boundary here would just be
+            # picking whichever records happen to land first/last in
+            # tier_records' input order, not real extremes, since a tie
+            # means there's no genuine boundary on this objective at all.
+            continue
+
         # The smallest and largest values define this tier's boundary for
         # the current objective, so both are always preserved.
         distances[sorted_tier[0].trial_id] = float("inf")
         distances[sorted_tier[-1].trial_id] = float("inf")
-
-        objective_range = maximum_value - minimum_value
-        if objective_range == 0:
-            # Everyone has the same value for this objective so it can't
-            # tell us anything about how spread out the candidates are
-            # It also cannot be used as a divisor!
-            continue
 
         for index in range(1, len(sorted_tier) - 1):
             trial_id = sorted_tier[index].trial_id
