@@ -34,7 +34,7 @@ class ResultReporter(Protocol):
 
 
 class Reporter:
-    """Write authoritative run outputs without changing optimizer results."""
+    """Write authoritative outputs with per-file atomic replacement."""
 
     def __init__(
         self,
@@ -61,7 +61,7 @@ class Reporter:
         )
 
     def write(self, result: OptimizationResult) -> None:
-        """Write final authoritative and explanatory result artifacts."""
+        """Write final artifacts; the group itself is not transactional."""
         if not isinstance(result, OptimizationResult):
             raise TypeError("result must be an OptimizationResult")
 
@@ -278,8 +278,11 @@ def _atomic_write_bytes(destination: Path, content: bytes) -> None:
         with os.fdopen(fd, "wb") as stream:
             stream.write(content)
         os.replace(temporary_name, destination)
-    except OSError as error:
+    except Exception as error:
         Path(temporary_name).unlink(missing_ok=True)
         raise ReportingError(
             f"Failed to write required report {destination.name}: {error}"
         ) from error
+    except BaseException:
+        Path(temporary_name).unlink(missing_ok=True)
+        raise

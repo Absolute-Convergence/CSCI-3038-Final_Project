@@ -135,6 +135,39 @@ class CandidateValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(CandidateValidationError, "mode"):
             validate_candidate(candidate, make_contract())
 
+    def test_categorical_integer_choice_rejects_equal_float(self) -> None:
+        contract = OptimizationContract(
+            parameters=(
+                ParameterDefinition(
+                    "batch_size",
+                    ParameterKind.CATEGORICAL,
+                    choices=(8, 16, 32),
+                ),
+            ),
+            objectives=(
+                Objective("accuracy", Direction.MAXIMIZE),
+                Objective("loss", Direction.MINIMIZE),
+            ),
+        )
+        candidate = CandidateConfiguration(parameters={"batch_size": 8.0})
+
+        with self.assertRaisesRegex(CandidateValidationError, "batch_size"):
+            validate_candidate(candidate, contract)
+
+    def test_float_parameter_rejects_unrepresentably_huge_integer(self) -> None:
+        candidate = CandidateConfiguration(
+            parameters={
+                "epochs": 4,
+                "learning_rate": 10**400,
+                "mode": "fast",
+            }
+        )
+
+        with self.assertRaisesRegex(
+            CandidateValidationError, "learning_rate"
+        ):
+            validate_candidate(candidate, make_contract())
+
     def test_missing_and_extra_parameters_are_reported_together(self) -> None:
         candidate = CandidateConfiguration(
             parameters={

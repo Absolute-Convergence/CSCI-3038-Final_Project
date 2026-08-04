@@ -1,13 +1,13 @@
 """
 The full pipeline slice, using the real merged runner.py and the real
-Iris worker.py as an actual subprocess -- nothing simulated.
+Iris iris_worker.py as an actual subprocess -- nothing simulated.
 
 test_one_trial_slice.py deliberately writes a fake metrics CSV to stand
 in for "the worker already ran," since runner.py wasn't merged yet when it
-was written. Now that runner.py and worker.py both exist for real, this
+was written. Now that runner.py and iris_worker.py both exist for real, this
 file chains everything all the way through: RandomSearch proposes a
-candidate, runner.execute() launches worker.py as a real subprocess,
-worker.py actually trains a model on the bundled Iris data and writes a
+candidate, runner.execute() launches iris_worker.py as a real subprocess,
+iris_worker.py actually trains a model on the bundled Iris data and writes a
 metrics file, build_trial_record() reads it back through the real
 metrics.py, the record is appended to a real TrialHistory, and
 StopPolicyEvaluator gates each step. No project code is mocked.
@@ -19,6 +19,7 @@ import math
 import sys
 import tempfile
 import unittest
+from importlib.util import find_spec
 from pathlib import Path
 
 from black_box_optimizer import runner
@@ -38,14 +39,17 @@ from black_box_optimizer.records import build_trial_record
 from black_box_optimizer.search.registry import create_algorithm
 from black_box_optimizer.stop_policy import StopPolicyEvaluator
 
+if find_spec("torch") is None:
+    raise unittest.SkipTest("PyTorch is optional and the Iris worker needs it")
+
 _WORKER_PATH = (
     Path(__file__).parent.parent.parent
-    / "examples" / "iris_torch" / "worker.py"
+    / "examples" / "iris_torch" / "iris_worker.py"
 )
 
 
 def make_contract() -> OptimizationContract:
-    """Mirrors the exact hyperparameters worker.py's CLI accepts, kept
+    """Mirrors the exact hyperparameters iris_worker.py's CLI accepts, kept
     small so every real subprocess trial trains fast."""
     return OptimizationContract(
         parameters=(
@@ -207,10 +211,10 @@ class FullPipelineRealWorkerTests(unittest.TestCase):
         # batch_size=0 is outside the contract's declared choices, but
         # CandidateConfiguration itself does not enforce a contract's
         # domain -- only the search algorithm avoids values like this.
-        # Building the candidate directly here forces worker.py to hit a
+        # Building the candidate directly here forces iris_worker.py to hit a
         # real, unhandled torch.utils.data.DataLoader ValueError at
         # runtime, the only reliable way to make the real subprocess
-        # exit non-zero without touching worker.py's own code.
+        # exit non-zero without touching iris_worker.py's own code.
         worker_spec = make_worker_spec()
         history = TrialHistory()
         candidate = CandidateConfiguration(parameters={

@@ -123,108 +123,64 @@ Keep this section brief and current. Update it after every repository change so
 the next person can resume without reconstructing recent decisions.
 
 - Last updated: 2026-08-03
-- Current state: The integrated MVP includes configuration,
-  declared-domain candidate validation, search, synchronous cancellable runner,
-  immutable records/results, append-only history, atomic persistence, the full
-  controller lifecycle, Reporter outputs, separate application composition,
-  the module CLI, and the real Iris worker. It builds the complete
-  history-ordered `ParetoFront`. Both result types live in
-  `black_box_optimizer.results`; Pareto algorithms remain in
-  `black_box_optimizer.pareto`. Invalid proposals launch no worker and enter
-  fatal finalization. The separate `Reporter` writes the resolved JSON shape,
-  deterministic Pareto CSV, text summary, and a
-  noninteractive plot of the first two declared objectives. Hyperloop (the
-  Tkinter/Pillow GUI) has landed on `main` per
-  `docs/gui-handoff-next-steps.md`'s handoff plan. NSGA-II (`nsga2`) is now a
-  second, opt-in `SearchAlgorithm`, registered alongside `random_search` in
-  `ALGORITHM_REGISTRY` with no changes to `controller.py`, `pareto.py`,
-  `persistence.py`, `history.py`, or `records.py`. It lives entirely in
-  `black_box_optimizer/search/nsga2.py`, reusing
-  `pareto.build_pareto_front()`/`is_eligible()` for non-dominated ranking and
-  `random_search._sample_value()`/`candidate_key()`/`_finite_space_size()`
-  for mutation, duplicate detection, and exhaustion; it depends on no
-  external MOEA library (no pymoo). `config_loader.py`'s algorithm-name
-  validation now checks `ALGORITHM_REGISTRY` instead of hardcoding
-  `random_search`, so any registered algorithm is selectable from a config
-  file. Design notes, including an after-the-build account of what actually
-  shipped, live in `docs/decisions/2026-08-02-nsga2-search-algorithm-design.md`.
-  A new synthetic benchmark, `examples/zdt1_benchmark/`, evaluates ZDT1
-  (Zitzler-Deb-Thiele) directly -- two closed-form formulas, no model
-  training, real subprocess per trial through the same `WorkerSpec`/
-  `runner.py` contract every other worker uses. `compare_search_algorithms.py`
-  in that directory scores `random_search` against `nsga2` by hypervolume
-  relative to ZDT1's known-optimal Pareto front, across multiple seeds.
-- Integration record: PR #20
-  (`work/2026-08-01-2348-nsga2-search-algorithm`) merged NSGA-II, its design
-  doc, the `config_loader.py` registry-based algorithm validation fix, a
-  40-test unit suite for `nsga2.py`, and a real-worker end-to-end pipeline
-  test into `main` as merge commit `7f5b0c4`. PR #21
-  (`work/2026-08-03-1810-zdt1-benchmark`) merged the ZDT1 benchmark worker,
-  the comparison script, and a 12-test suite for the ZDT1 formula and
-  hypervolume math into `main` as merge commit `fc5121a`. PR #22
-  (`work/2026-08-03-1903-test-bug-audit`) merged a coverage-closing pass
-  (91% -> 99% overall, 80 new tests, 363 total) into `main` as merge commit
-  `d72d3c9`. PR #23 (`work/2026-08-03-1940-bug-hunt`) fixed the
-  order-dependent crowding-distance bug in `nsga2.py` into `main` as merge
-  commit `341abdb`. PR #24 (`work/2026-08-03-2011-negative-seed-bug`)
-  fixed the negative-seed CLI crash by rejecting it at `AlgorithmSpec`
-  construction into `main` as merge commit `faae4d8` (see
-  `KNOWN_ISSUES.md`'s Resolved section for both). All five working
-  branches deleted locally and remotely per convention.
-- Decisions: NSGA-II is hand-implemented rather than depending on pymoo --
-  pymoo's primary API assumes ownership of the evaluation loop (batch
-  `minimize()`), doesn't fit this project's one-worker-at-a-time controller,
-  and would need its own objective-direction/domain-type translation layer;
-  population size is intentionally small (`clamp(2 * num_parameters, 4,
-  10)`), so pymoo's batch-vectorization advantage wouldn't pay off here
-  anyway. Failed/ineligible trials get one shared worst rank rather than an
-  invented objective value, and `TrialHistory` is never rewritten with a
-  fake value. Population size also clamps to the finite search-space size
-  when smaller than the usual floor -- found via testing, not the original
-  design. The ZDT1 benchmark uses n=4 decision variables, not the original
-  paper's n=30 -- measured directly (20,000 random samples) that n=30's 29
-  nuisance parameters put the optimal region out of reach for either
-  algorithm within any practical trial budget, given this project's
-  uniform-reset mutation operator (resamples a fresh random value rather
-  than nudging toward a better one). Generated comparison output (raw CSV,
-  chart) is gitignored under `examples/zdt1_benchmark/comparison_results/`
-  as regenerable evidence, same treatment as `/runs/`.
-- Verification: All 366 tests pass under Python 3.13.14 (the course-required
-  interpreter; `.venv` was rebuilt from a stray 3.14.6 install during the
-  NSGA-II checkpoint and has stayed on 3.13.14 since). Overall package
-  coverage is 99% (1385 statements / 452 branches; 20 of 22 source files at
-  100%) after a dedicated coverage-closing pass, verified with `coverage.py`
-  (a local dev install, not a project dependency) -- see the prior
-  checkpoint's notes for the two files that stay short of 100% and why
-  (`__main__.py`'s subprocess-tracing gap, `controller.py`'s two genuinely
-  unreachable RECORDING guards). The hygiene checker passes across 60
-  source files with the same non-blocking line-length advisories as before.
-  A real 5-seed x 500-trial x 2-algorithm ZDT1 comparison (5,000 real
-  subprocess trials) ran successfully: NSGA2 averaged 64% more hypervolume
-  than random_search (0.389 vs 0.237, as a fraction of the true-optimal
-  hypervolume: 44.4% vs 27.0%) and was more than twice as consistent run to
-  run (stdev 0.069 vs 0.157).
-- A separate, dedicated adversarial bug-hunt pass (six parallel reviewers,
-  one per module cluster, run immediately after the coverage pass above
-  reached 99% with no bugs found) found 11 real, independently-reproduced
-  bugs and 4 test-quality gaps that coverage alone never surfaces. Two
-  (the `nsga2.py` crowding-distance bug, the negative-seed CLI crash) are
-  fixed as of PR #23/#24; the other 9 are still open. Full details, each
-  with a concrete repro, are recorded in `KNOWN_ISSUES.md` (Open and
-  Resolved sections) -- read that file before starting the next branch
-  instead of re-deriving this list. One of the remaining 9 is still
-  critical: a `KeyboardInterrupt` during report-writing mislabels a
-  genuinely completed run as "cancelled" (fix is small -- add
-  `FINALIZING` to `controller.py`'s `_UNSAFE_TO_CANCEL_STATES` -- but
-  changes observable behavior of a controlled contract file, worth a
-  quick confirm before landing it).
-- Next work: Fix the remaining bugs in `KNOWN_ISSUES.md`'s Open section,
-  starting with the KeyboardInterrupt/cancelled-mislabeling one, on a new
-  `work/YYYY-MM-DD-HHmm-bug-hunt`-style branch. Once those land, older
-  possible directions if picked back up: a harder real-worker benchmark
-  (Iris's objectives are too correlated to exercise Pareto diversity),
-  parallel trial execution (a genuine architecture change to
-  `controller.py`'s one-worker-at-a-time loop, not yet approved), or
-  NSGA-II elitism (combining parent and offspring populations before
-  selection, the biggest remaining gap versus canonical NSGA-II per its
-  design doc).
+- Current state: Package preparation is active on
+  `work/2026-08-03-1923-package-release-audit`. The branch integrates
+  `origin/main` through `f9c9e64` and the local package checkpoint
+  `beaefa7`. `pyproject.toml` targets distribution
+  `hyperloop-optimizer` version 0.1.1. The approved installed commands are
+  `hyperloop-optimizer` and `hyperloop-synthetic-worker`; the existing
+  module CLI remains available. The wheel contains the optimizer core and the
+  dependency-free synthetic worker, while the Iris worker, GUI, tests, and
+  class-project material remain outside the installed package.
+- Search-efficacy benchmark: The ZDT1 comparison harness now accepts
+  `--seeds`, `--trials-per-run`, and `--output-dir`. Its default is 10 seeds x
+  500 trials x 2 algorithms, or 10,000 real sequential worker subprocesses.
+  The documented practical tiers are 1,000, 5,000, and 10,000 total trials,
+  selected with 1, 5, or 10 seeds respectively. Do not use 20K/50K as package
+  release gates; the verified 10K run already takes about 11.5 minutes.
+- Cleanup: Checkpoint `beaefa7` removes 515 generated
+  `optimizer_runs/` artifacts from Git tracking while preserving the local
+  files under an ignored root directory. A repeated-run integration test
+  verifies each Pareto report is derived only from its own authoritative
+  result.
+- Upstream integration: PR #22's coverage work, PR #23's deterministic NSGA-II
+  tied-objective crowding-distance fix, and PR #24's negative-seed validation
+  fix are integrated. Mel approved the remaining package-remediation contract
+  choices. The ten remaining defects are fixed with focused regression tests;
+  `KNOWN_ISSUES.md` has no confirmed open defect on this branch. The approved
+  decisions are recorded in
+  `docs/decisions/2026-08-03-package-release-bug-remediation.md`.
+- Decisions: Publish one first PyPI release as v0.1.1 rather than reusing the
+  existing v0.1.0 Git tag. Core direct dependencies are NumPy and Matplotlib;
+  PyTorch stays exclusive to the Iris example, and Pillow may be installed
+  only transitively through Matplotlib. Mel approved the dedicated
+  `hyperloop-synthetic-worker` entry point so installed configurations do not
+  guess the owning Python executable.
+- Verification: After the package-remediation pass, all 394 tests pass on
+  Windows under Python 3.13.14. The hygiene check passes across 62 source
+  files. Fresh wheel and sdist builds pass `twine check`; the 30-entry wheel
+  has only NumPy and Matplotlib as direct requirements and contains no GUI,
+  Iris, tests, examples, documentation, or PyTorch. A fresh install outside
+  the checkout passes both command help checks, `pip check`, and a four-trial
+  synthetic-worker run with every required artifact. In that PyTorch-free
+  environment, 380 tests pass and four Iris modules skip as intended. The full
+  post-remediation ZDT1 benchmark completed 10,000 real subprocess trials in
+  687.6 seconds. NSGA-II mean hypervolume was 0.3884 (44.3% of optimum,
+  stdev 0.0924) versus Random Search 0.2113 (24.1%, stdev 0.1119), about 84%
+  more dominated hypervolume. The ignored raw CSV contains 5,000 rows per
+  algorithm and the ignored convergence PNG was regenerated.
+- Cross-platform gate: The package workflow now builds and validates one wheel
+  and source archive, uploads that exact distribution bundle, and requires the
+  Windows, Ubuntu, and macOS jobs to install the uploaded wheel before running
+  the core-compatible suite, dependency check, hygiene check, and installed
+  synthetic-worker smoke test. After this workflow change, all 394 tests, the
+  62-file hygiene check, a fresh wheel/sdist build, `twine check`, and the
+  workflow's exact-wheel selection command pass locally. PR #25 Actions run
+  30872868748 then passed the build-distributions job and
+  the exact-wheel core jobs on `windows-latest`, `ubuntu-latest`, and
+  `macos-latest`. The README now records the verified core-package support
+  boundary; the GUI and PyTorch Iris example remain outside that claim.
+- Next work: Require the documentation commit's final hosted matrix to pass,
+  merge PR #25 without squashing, create the repository checkpoint, and build
+  fresh archives from the exact release commit. The remaining publication
+  gates are recorded in `docs/package-release-checklist.md`.

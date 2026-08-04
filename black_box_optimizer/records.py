@@ -26,15 +26,26 @@ from black_box_optimizer.models import CandidateConfiguration, ParameterValue
 # These are the only execution and metrics states we expect to see
 # Anything else means something upstream has gone wrong
 ExecutionStatus = Literal[
-    "completed", "process_failed", "timed_out", "launch_failed", "cancelled"
+    "completed",
+    "process_failed",
+    "timed_out",
+    "launch_failed",
+    "cancelled",
+    "internal_error",
 ]
 MetricsStatus = Literal["valid", "missing", "malformed", "nonfinite"]
 
 # Keep these in sync with the literal definitions above
 _VALID_EXECUTION_STATUSES = (
-    "completed", "process_failed", "timed_out", "launch_failed", "cancelled"
+    "completed",
+    "process_failed",
+    "timed_out",
+    "launch_failed",
+    "cancelled",
+    "internal_error",
 )
 _VALID_METRICS_STATUSES = ("valid", "missing", "malformed", "nonfinite")
+_ERROR_MESSAGE_LIMIT = 1_000
 
 
 def _is_number(value: object) -> bool:
@@ -165,4 +176,30 @@ def build_trial_record(
         exit_code=execution_result["exit_code"],
         timed_out=execution_result["timed_out"],
         error_message=execution_result["error_message"],
+    )
+
+
+def build_internal_error_record(
+    candidate: CandidateConfiguration,
+    trial_id: int,
+    phase: str,
+    error: Exception,
+    runtime_seconds: float,
+) -> TrialRecord:
+    """Record an authorized attempt lost to an internal optimizer failure."""
+    detail = " ".join(str(error).split()) or "no diagnostic detail"
+    message = (
+        f"Internal optimizer error during {phase}: "
+        f"{type(error).__name__}: {detail}"
+    )[:_ERROR_MESSAGE_LIMIT]
+    return TrialRecord(
+        trial_id=trial_id,
+        parameters=candidate.parameters,
+        metrics={},
+        execution_status="internal_error",
+        metrics_status="missing",
+        runtime_seconds=runtime_seconds,
+        exit_code=None,
+        timed_out=False,
+        error_message=message,
     )

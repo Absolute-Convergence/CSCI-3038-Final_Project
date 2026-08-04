@@ -5,7 +5,7 @@ test_application_real_worker.py already proves the Application/Controller/
 runner/worker/metrics/history/reporting stack composes correctly end to
 end with RandomSearch. This file proves the same composition holds for
 NSGA2 specifically -- nothing here is mocked or simulated, every trial is
-a real `python worker.py` subprocess training a real (tiny) model.
+a real `python iris_worker.py` subprocess training a real (tiny) model.
 
 The Iris worker's CLI requires all four of learning_rate, hidden_size,
 epochs, and batch_size, so the contract needs all four ParameterDefinition
@@ -23,13 +23,19 @@ import json
 import sys
 import tempfile
 import unittest
+from importlib.util import find_spec
 from pathlib import Path
 
 from black_box_optimizer.application import initialize_application
 from black_box_optimizer.controller import ControllerState
 
+if find_spec("torch") is None:
+    raise unittest.SkipTest("PyTorch is optional and the Iris worker needs it")
+
 _REPOSITORY = Path(__file__).resolve().parents[2]
-_IRIS_WORKER = _REPOSITORY / "examples" / "iris_torch" / "worker.py"
+_IRIS_WORKER = (
+    _REPOSITORY / "examples" / "iris_torch" / "iris_worker.py"
+)
 
 _GENERATION_SIZE = 8
 _MAX_TRIALS = _GENERATION_SIZE + 1

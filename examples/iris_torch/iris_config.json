@@ -1,6 +1,6 @@
 {
   "worker": {
-    "command": ["py", "-3.13", "worker.py"],
+    "command": ["py", "-3.13", "iris_worker.py"],
     "metrics_argument": "--metrics-out",
     "timeout_seconds": 120.0
   },

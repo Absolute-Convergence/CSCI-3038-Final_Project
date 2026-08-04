@@ -1,135 +1,82 @@
 # Known Issues
 
-Confirmed, reproduced bugs in merged code -- not a wishlist.
+Confirmed, reproduced defects and their remediation status. This is not a
+wishlist.
 
 ## Open
 
-Found during a dedicated adversarial bug-hunt pass (six parallel reviewers,
-one per module cluster), immediately after a separate coverage-closing pass
-brought the suite to 99% line/branch coverage with no bugs found. Every
-issue below was independently reproduced by running the actual code, not
-inferred from reading alone.
-
-### A `KeyboardInterrupt` during report-writing mislabels a completed run as cancelled
-
-`controller.py`'s `_UNSAFE_TO_CANCEL_STATES` covers `EXECUTING` and
-`RECORDING` but not `FINALIZING`. If a `KeyboardInterrupt` lands inside
-`self._reporter.write(self.result)`, it isn't a `ReportingError` so
-`_finalize()`'s own except clause doesn't catch it; it propagates to the
-outer handler, which unconditionally sets
-`self.termination_reason = "user_cancelled"` and calls `_finalize()` again.
-Since the already-correct result's `termination_reason` now differs from
-the new one, the rebuild guard discards the correct result and replaces it
-with one labeled `status="cancelled"` -- the reporter gets invoked twice,
-once with each. Reproduced: a run whose one trial genuinely completed
-(`history` length 1) ends with `result.status == "cancelled"` and
-`reporter.calls == 2` after a `KeyboardInterrupt` on the first write.
-
-### A failed per-trial `mkdir()` bypasses the checkpoint-failure safety net
-
-`persistence.py`'s `RunDirectory.trial_directory()` calls
-`directory.mkdir(parents=True, exist_ok=True)` with no try/except, unlike
-every other filesystem operation in the class. `write_diagnostics()` calls
-`trial_directory()` *outside* its own `except OSError -> CheckpointError`
-block. `controller.py`'s `RECORDING` state only catches `CheckpointError`
-around this call, specifically so `_finalize()` can still run and write
-partial evidence on failure. Reproduced: forcing `trial_directory()` to
-raise `OSError` on its second call makes the raw `OSError` escape
-`controller.run()` entirely -- the run directory ends up with **no**
-`summary.txt`, **no** `history.csv`, none of the partial-evidence
-artifacts the design explicitly promises for a fatal checkpoint failure.
-
-### An unanticipated exception during EXECUTING/RECORDING strands the controller and masks itself on retry
-
-`candidate`/`metrics_path`/`execution_result` are local variables inside
-`controller.py`'s `run()`, reset to `None` at the top of every call, while
-`self.state` is an instance attribute that survives across calls. If
-`runner.execute()` or `build_trial_record()` raises something other than
-`KeyboardInterrupt` (e.g. a collaborator bug producing a malformed
-execution-result dict), the exception correctly propagates out of `run()`
--- but `self.state` is left at `EXECUTING`/`RECORDING`. Reproduced: calling
-`run()` again after catching that first exception raises an unrelated
-`RuntimeError: EXECUTING reached without a candidate` instead of the real
-error, and the in-flight trial attempt is silently dropped -- never
-recorded, never checkpointed, never counted -- violating the "every
-authorized attempt must be recorded" design invariant.
-
-### Huge integer bounds raise `OverflowError` instead of `ValueError`
-
-`models.py`'s `ParameterDefinition._validate_float_domain` (float bounds)
-and `WorkerSpec.__post_init__` (`timeout_seconds`) both call
-`math.isfinite(float(value))` after only checking `_is_number(value)`,
-which accepts a plain `int`. Python's `float()` on an arbitrarily large
-`int` raises `OverflowError`, not `ValueError`. Reproduced:
-`ParameterDefinition("x", ParameterKind.FLOAT, minimum=0.0,
-maximum=10**400)` raises `OverflowError: int too large to convert to
-float` instead of the intended "must be finite" `ValueError`.
-`config_loader.py` happens to also catch `OverflowError`, so config-loading
-survives but surfaces the raw Python message instead of the intended one;
-any direct/programmatic construction outside `config_loader` gets an
-uncaught `OverflowError`.
-
-### Categorical validation accepts a float that merely equals an int choice
-
-`candidate_validation.py`'s `_validate_value()` checks categorical values
-with `value in definition.choices`, which uses `==` -- and `8.0 == 8` is
-`True` in Python. Reproduced: a candidate with `batch_size=8.0` against
-`choices=(8, 16, 32)` passes `validate_candidate()` and comes back still a
-`float`, not the declared `int`.
-
-### `WorkerSpec.metrics_argument` accepts a bare `"--"` with no flag name
-
-`models.py` only checks `metrics_argument.startswith("--")`, never that
-anything follows it. Reproduced:
-`WorkerSpec(command=(...), metrics_argument="--", timeout_seconds=1.0)`
-constructs successfully. In most CLI/argparse conventions a bare `"--"` is
-the "end of options" sentinel, not a flag -- this "valid" `WorkerSpec`
-would silently produce a broken worker invocation rather than being
-rejected at config time.
-
-### Windows-style absolute paths get mangled when a config is loaded on POSIX (and vice versa)
-
-`config_loader.py`'s `_resolve_command_part()` uses `Path.is_absolute()`,
-which is platform-dependent. A Windows path like `"C:\\Python313\\python.exe"`
-loaded on macOS/Linux is not recognized as absolute, so it gets joined
-under the configuration directory and `.resolve()`d into a bogus,
-nonexistent path instead of being left alone or rejected. Reproduced:
-loading a config with that worker command on this (POSIX) machine resolves
-it to `/private/.../tmpXXXX/C:\Python313\python.exe`. Every trial then
-fails with a confusing `launch_failed` and no indication the real cause is
-a path-mangling bug. The repo already ships a Windows-flavored example
-config (`examples/iris_torch/iris_config.json`), so mixed-platform config
-use is in scope.
-
-### `Reporter.write()` isn't atomic as a group
-
-`reporting.py`'s `write()` performs four separate atomic writes in
-sequence (`resolved_config.json`, `pareto_front.csv`, `summary.txt`,
-`pareto_front.png`) with no rollback across the group. Each individual
-`os.replace()` is atomic, but a failure partway through leaves whatever
-already succeeded on disk. Reproduced: forcing the third write
-(`summary.txt`) to fail on a fresh run directory leaves
-`resolved_config.json` and `pareto_front.csv` present while `summary.txt`
-and `pareto_front.png` are simply absent -- a partial, inconsistent
-artifact bundle, not the all-or-nothing guarantee the "authoritative
-result artifacts" framing implies.
-
-### `checkpoint()`/`write_diagnostics()` only catch `OSError`, so other failures leak a temp file and bypass `CheckpointError`
-
-`persistence.py`'s `checkpoint()` builds CSV rows with
-`record.parameters[parameter.name]` (direct indexing, not `.get()`) inside
-the same `try` block whose `except` clause only matches `OSError`.
-Reproduced: a record missing a declared parameter raises a bare `KeyError`
-that isn't caught, leaving an orphaned `.tmp` file in the run directory and
-propagating an unhandled exception instead of the documented
-`CheckpointError` -> fatal-finalize path. Currently unreachable through the
-sanctioned pipeline (candidates are validated before a `TrialRecord` is
-built), so this is a robustness/defense-in-depth gap rather than a live
-production crash today -- but it's a real mismatch between the atomic-write
-contract's stated intent and what's actually handled. The same narrow
-`except OSError` pattern exists in `_atomic_write_text()`.
+No confirmed defects remain open at the package-release remediation checkpoint.
 
 ## Resolved
+
+### Invalid configuration paths leaked a raw `ValueError` on Windows
+
+On Windows, a null byte could survive `Path.resolve()` and fail later in
+`Path.open()`. `_read_json()` now translates that `ValueError` into the
+same location-aware `ConfigurationError` used for other invalid paths. The
+previously failing Windows regression test now passes.
+
+### A finalization interrupt mislabeled a completed run as cancelled
+
+`FINALIZING` is now an unsafe cancellation state. A `KeyboardInterrupt`
+during report writing propagates without replacing the authoritative completed
+result, changing its termination reason, or silently invoking the reporter
+twice. A later explicit retry reuses the same immutable result.
+
+### A failed per-trial directory creation bypassed checkpoint handling
+
+`RunDirectory.trial_directory()` now converts an `OSError` into
+`CheckpointError`. The controller retains any in-memory record and reaches
+fatal finalization instead of leaking a raw filesystem error and losing the
+partial result.
+
+### Unexpected EXECUTING or RECORDING failures stranded the controller
+
+Mel approved `execution_status="internal_error"` for this boundary.
+Unexpected collaborator exceptions now produce one immutable, bounded-
+diagnostic `TrialRecord` for the authorized attempt, checkpoint it when
+possible, and finalize the run with `fatal_error`. Retrying the stopped
+controller returns the same result instead of masking the original failure.
+
+### Huge integer values leaked `OverflowError` from numeric validation
+
+Finite-number validation now treats integers too large for `float()` as
+nonfinite input. Float parameter bounds, worker timeouts, and float candidate
+values reject them through their documented `ValueError` or
+`CandidateValidationError` boundaries.
+
+### Categorical validation confused equal integer and float values
+
+Categorical membership now requires both value equality and exact type
+identity. For example, `8.0` no longer satisfies an integer choice of `8`.
+
+### A bare `"--"` was accepted as the worker metrics argument
+
+`WorkerSpec` now requires at least one character after the double-hyphen
+prefix, so the end-of-options sentinel is rejected during configuration
+validation.
+
+### Foreign-platform absolute worker paths were mangled
+
+Configuration loading now recognizes Windows and POSIX absolute-path syntax
+independently of the host. An absolute path written for another operating
+system is rejected with a location-aware `ConfigurationError` instead of
+being rewritten into a bogus native path.
+
+### Report writing was assumed to be atomic as a group
+
+Mel clarified that atomicity is guaranteed per file, not across the complete
+report collection. Each file is still atomically replaced. A reporting failure
+exits nonzero and means the collection is incomplete; already committed files
+remain individually valid. The root-level artifact layout is unchanged.
+
+### Non-filesystem checkpoint failures leaked temporary files
+
+`checkpoint()` now cleans its temporary file and translates any ordinary
+serialization failure, including a missing declared parameter `KeyError`,
+into `CheckpointError`. Diagnostic persistence similarly translates ordinary
+write failures, while interruption still propagates after temporary cleanup.
+
 
 ### `AlgorithmSpec` accepted a negative `seed`; the CLI crashed instead of exiting cleanly
 

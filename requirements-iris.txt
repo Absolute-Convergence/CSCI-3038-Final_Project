@@ -1,0 +1,2 @@
+# Optional external Iris example worker only; not required by Hyperloop.
+torch>=2.0

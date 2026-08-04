@@ -12,7 +12,16 @@ from black_box_optimizer.reporting import ReportingError
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = _build_parser()
+    return _run(argv, prog="python -m black_box_optimizer")
+
+
+def installed_main(argv: Sequence[str] | None = None) -> int:
+    """Run through the installed ``hyperloop-optimizer`` command."""
+    return _run(argv, prog="hyperloop-optimizer")
+
+
+def _run(argv: Sequence[str] | None, *, prog: str) -> int:
+    parser = _build_parser(prog)
     arguments = parser.parse_args(argv)
 
     try:
@@ -44,9 +53,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def _build_parser(prog: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="python -m black_box_optimizer",
+        prog=prog,
         description=(
             "Optimize one opaque local worker from a validated JSON project "
             "configuration."

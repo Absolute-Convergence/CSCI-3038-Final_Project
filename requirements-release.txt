@@ -1,0 +1,3 @@
+# Tools used to build and validate distribution archives before publication.
+build>=1.2
+twine>=6.0

@@ -1,4 +1,0 @@
-usage: worker.py [-h] --learning-rate LEARNING_RATE --hidden-size HIDDEN_SIZE
-                 --epochs EPOCHS --batch-size BATCH_SIZE --metrics-out
-                 METRICS_OUT
-worker.py: error: the following arguments are required: --epochs, --batch-size

@@ -1,8 +1,8 @@
-# Black Box Optimizer
+# Hyperloop
 
 CSCI 3038 final project by The Snek People.
 
-Black Box Optimizer is a local Python 3.13.14 application for
+Hyperloop is a local Python 3.13.14 black-box optimizer for
 tuning an external worker program without importing or inspecting that
 worker's internal code. It sends candidate parameters through command-line
 flags, receives one row of numerical metrics through a trial-specific CSV
@@ -10,12 +10,14 @@ file, and returns the complete non-dominated Pareto Front across multiple
 objectives.
 
 The implemented MVP includes immutable configuration and candidate models,
-validated JSON loading, declared-domain proposal validation, seeded
-RandomSearch, synchronous cancellable worker execution, immutable trial
+validated JSON loading, declared-domain proposal validation, seeded Random
+Search and NSGA-II, synchronous cancellable worker execution, immutable trial
 records, append-only history, lifecycle control, atomic persistence, complete
-mixed-direction Pareto evaluation, immutable results, reporting, and a module
-command-line entry point. The external PyTorch Iris worker remains outside the
-optimizer package.
+mixed-direction Pareto evaluation, immutable results, reporting, and module
+and installed command-line entry points. The external PyTorch Iris worker
+remains outside the distribution. A dependency-free ZDT1 synthetic worker is
+distributed in a separate namespace so Hyperloop can still treat it as an
+opaque subprocess.
 
 See [docs/architecture-baseline.md](docs/architecture-baseline.md) for the
 controlling foundation contracts and MVP boundaries.
@@ -23,6 +25,10 @@ controlling foundation contracts and MVP boundaries.
 See [docs/gui-handoff-next-steps.md](docs/gui-handoff-next-steps.md) for the
 recommended handoff from Charles's Tkinter GUI to Hyperloop's existing CLI and
 run artifacts.
+
+See [docs/package-release-checklist.md](docs/package-release-checklist.md) for
+the single-package v0.1.1 release boundary, audit evidence, and publication
+gates.
 
 The current planning guidance is the aligned Draft v0.2 document set in
 [`docs/planning_baseline_v02`](docs/planning_baseline_v02). It remains pending
@@ -45,7 +51,7 @@ JSON project configuration
 Configuration loader -> immutable ProjectConfiguration
           |
           v
-Seeded RandomSearch -> immutable CandidateConfiguration
+Random Search or NSGA-II -> immutable CandidateConfiguration
           |
           v
 Controller + StopPolicy -> synchronous local Runner
@@ -87,7 +93,11 @@ CSCI-3038-Final_Project/
 |-- AGENTS.md                         # repository rules and scratch memory
 |-- KNOWN_ISSUES.md                   # reproduced defects in merged code
 |-- README.md                         # project overview and development map
-|-- requirements.txt                 # optimizer, reporting, and example deps
+|-- pyproject.toml                    # package metadata and installed CLI
+|-- requirements.txt                 # core optimizer/reporting dependencies
+|-- requirements-iris.txt            # external Iris worker dependency
+|-- requirements-gui.txt             # optional source GUI dependency
+|-- requirements-release.txt         # build and publication tools
 |-- source_hygiene.json               # global source-file hygiene settings
 |-- black_box_optimizer/
 |   |-- __init__.py                   # implemented public model exports
@@ -109,14 +119,21 @@ CSCI-3038-Final_Project/
 |   `-- search/
 |       |-- base.py                   # implemented search protocol/results
 |       |-- registry.py               # implemented built-in algorithm registry
-|       `-- random_search.py          # implemented seeded RandomSearch
+|       |-- random_search.py          # implemented seeded Random Search
+|       `-- nsga2.py                  # implemented seeded NSGA-II
+|-- hyperloop_workers/
+|   |-- __init__.py                   # separate bundled-worker namespace
+|   `-- synthetic_worker.py           # dependency-free ZDT1 worker
 |-- examples/
 |   |-- __init__.py                   # implemented, makes examples importable
-|   `-- iris_torch/
-|       |-- __init__.py               # implemented package marker
-|       |-- iris_config.json          # implemented example configuration
-|       |-- iris-data.csv             # implemented bundled Iris dataset
-|       `-- worker.py                 # implemented external PyTorch worker
+|   |-- iris_torch/
+|   |   |-- __init__.py               # implemented package marker
+|   |   |-- iris_config.json          # implemented example configuration
+|   |   |-- iris-data.csv             # implemented bundled Iris dataset
+|   |   `-- iris_worker.py            # external PyTorch worker
+|   `-- zdt1_benchmark/
+|       |-- synthetic_config.json     # dependency-free smoke-test config
+|       `-- compare_search_algorithms.py
 |-- tests/
 |   |-- test_models.py                # implemented foundation-model tests
 |   |-- test_metrics.py               # implemented metrics-parser tests
@@ -127,7 +144,10 @@ CSCI-3038-Final_Project/
 |   |-- test_search_base.py           # implemented ProposalResult tests
 |   |-- test_search_registry.py       # implemented algorithm-registry tests
 |   |-- test_random_search.py         # implemented RandomSearch tests
-|   |-- test_worker.py                # implemented Iris worker tests
+|   |-- test_nsga2.py                 # implemented NSGA-II tests
+|   |-- test_iris_worker.py           # implemented Iris worker tests
+|   |-- test_zdt1_benchmark.py        # synthetic worker/benchmark tests
+|   |-- test_packaging.py             # distribution-boundary tests
 |   |-- test_check_monoliths.py       # implemented hygiene-checker tests
 |   |-- test_controller.py            # implemented ApplicationController tests
 |   |-- test_pareto.py                # implemented full Pareto tests
@@ -150,9 +170,10 @@ CSCI-3038-Final_Project/
     `-- check_monoliths.py            # implemented source hygiene checker
 ```
 
-The example worker remains outside `black_box_optimizer`. PyTorch may be a
-dependency of that example, but it must not become a dependency of the
-optimizer package.
+Workers remain outside `black_box_optimizer`. The installed
+`hyperloop_workers.synthetic_worker` uses only the Python standard library.
+PyTorch belongs only to the source-checkout Iris example and its tests; it is
+not a dependency of the Hyperloop distribution.
 
 ## Component Responsibilities
 
@@ -172,7 +193,7 @@ optimizer package.
 
 The intended dependency direction is inward toward immutable contracts. The
 Runner will not import search or Pareto code; RandomSearch will not import the
-Runner; and the optimizer package will never import the example worker.
+Runner; and the optimizer package will never import a worker implementation.
 
 ## Implemented Public Surfaces
 
@@ -217,18 +238,71 @@ Additional implemented surfaces are imported from their owning modules:
 - `black_box_optimizer.search.base.ProposalResult` and `SearchAlgorithm`
 - `black_box_optimizer.search.registry.create_algorithm`
 - `black_box_optimizer.search.random_search.RandomSearch`
+- `black_box_optimizer.search.nsga2.NSGA2`
 
 See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for reproduced defects in merged code.
 
-## Run the Optimizer
+## Install and Run Hyperloop
 
-Install dependencies and invoke the module with a project configuration:
+Install the released distribution and invoke its dedicated command with a
+project configuration:
 
 ```powershell
-py -3.13 -m pip install -r requirements.txt
+py -3.13 -m pip install hyperloop-optimizer
+hyperloop-optimizer path\to\config.json --output-dir runs
+```
+
+The existing module command remains supported:
+
+```powershell
+py -3.13 -m black_box_optimizer path\to\config.json --output-dir runs
+```
+
+From a source checkout, install the core package in editable mode. Install the
+Iris dependency separately only when running that example:
+
+```powershell
+py -3.13 -m pip install -e .
+py -3.13 -m pip install -r requirements-iris.txt
 py -3.13 -m black_box_optimizer `
   examples\iris_torch\iris_config.json `
   --output-dir runs
+```
+
+The distribution also includes a near-instant synthetic worker for smoke
+tests and search evaluation. It has its own installed command so worker
+configuration never needs to guess which Python interpreter owns Hyperloop:
+
+```powershell
+hyperloop-synthetic-worker --help
+```
+
+The source checkout includes a ready-to-run configuration:
+
+```powershell
+hyperloop-optimizer `
+  examples\zdt1_benchmark\synthetic_config.json `
+  --output-dir runs
+```
+
+That four-trial configuration is an installation and artifact smoke test, not
+a search-quality claim. Search efficacy is measured separately against ZDT1's
+known optimal front with repeated seeds and dominated hypervolume. The default
+comparison launches 10,000 real worker subprocesses: two algorithms, ten seeds
+per algorithm, and 500 trials per seeded run.
+
+```powershell
+py -3.13 -m examples.zdt1_benchmark.compare_search_algorithms
+```
+
+Use one or five seeds for the shorter 1,000- or 5,000-trial tiers while
+keeping 500 trials in each independent run. The unchanged default is the
+10,000-trial release-evidence tier:
+
+```powershell
+py -3.13 -m examples.zdt1_benchmark.compare_search_algorithms --seeds 1
+py -3.13 -m examples.zdt1_benchmark.compare_search_algorithms --seeds 5
+py -3.13 -m examples.zdt1_benchmark.compare_search_algorithms
 ```
 
 Each invocation creates a unique `run_*` directory. It contains the resolved
@@ -236,12 +310,27 @@ configuration, atomically checkpointed `history.csv`, one directory per trial,
 the complete Pareto CSV, a text summary, and a PNG showing the first two
 declared objectives. Every recorded trial directory contains `stdout.txt` and
 `stderr.txt`; `metrics.csv` exists only when the worker produced it. The
-repository-root `runs/` directory is ignored by Git because these are local,
-generated run artifacts rather than source files.
+repository-root `runs/` and `optimizer_runs/` directories are ignored by Git
+because these are local, generated run artifacts rather than source files.
+Every invocation owns a new unique run directory, a fresh history, and a
+Pareto front derived only from that run.
+
+Atomicity is guaranteed per file, including every `history.csv` checkpoint
+and each final report replacement. The collection of final report files is not
+a single transaction: if reporting fails, the command exits nonzero and files
+already committed remain valid individually, but the report collection is
+incomplete and must not be treated as a completed bundle.
 
 Normal completion and a no-eligible-trials result exit with code 0. Fatal
 failure exits with code 1, invalid initialization/configuration exits with code
 2, and user cancellation exits with code 130.
+
+The Hyperloop core package is verified on Python 3.13.14 with GitHub-hosted
+Windows, Ubuntu, and macOS runners. Each platform installs the same validated
+wheel before running the core-compatible test suite, dependency validation,
+source hygiene check, and installed synthetic-worker smoke test. The optional
+Tkinter GUI and PyTorch Iris example are outside that package compatibility
+claim.
 
 ## MVP Boundaries
 
@@ -250,7 +339,7 @@ failure exits with code 1, invalid initialization/configuration exits with code
 - No networking, remote workers, or hosted services
 - No concurrency, threads, async execution, or process pools
 - No database or resume-after-interruption behavior
-- Seeded RandomSearch as the only required algorithm
+- Seeded Random Search as the required baseline; seeded NSGA-II is also shipped
 - Two or more independently minimized or maximized objectives
 - One immutable record for every attempted worker execution
 - The complete Pareto Front, with no automatically selected universal winner
@@ -284,12 +373,12 @@ timestamped working branches.
 
 ## Development Verification
 
-Install the current dependencies into the same Python 3.13 interpreter used to
-run the tests. NumPy supports seeded RandomSearch, Matplotlib supports Reporter
-plots, and PyTorch belongs only to the external Iris example and its tests:
+Install Hyperloop and the separate Iris test dependency into the same Python
+3.13 interpreter used to run the complete repository suite:
 
 ```powershell
-py -3.13 -m pip install -r requirements.txt
+py -3.13 -m pip install -e .
+py -3.13 -m pip install -r requirements-iris.txt
 ```
 
 Run the current test suite with the required interpreter:
@@ -304,7 +393,9 @@ Run the repository-wide source hygiene check:
 py -3.13 tools\check_monoliths.py
 ```
 
-At the current implementation checkpoint, all 229 tests pass under the
-course-required Python 3.13.14 interpreter. The suite includes a real
-controller-to-Iris run and an end-to-end module CLI test. The source-hygiene
-check passes across 51 source files without advisories.
+At the package-remediation checkpoint, 394 tests pass under the
+course-required Python 3.13.14 interpreter. The suite includes real
+controller-to-Iris runs, a synthetic-worker subprocess test, an end-to-end
+module CLI test, repeated-run isolation coverage, and packaging-boundary
+checks. The source-hygiene check passes across 62 source files; line-length
+advisories remain non-failing design guidance.

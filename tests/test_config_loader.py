@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -170,8 +171,31 @@ class ConfigurationLoaderTests(unittest.TestCase):
             (
                 "py",
                 "-3.13",
-                str((path.parent / "worker.py").resolve()),
+                str((path.parent / "iris_worker.py").resolve()),
             ),
+        )
+
+    def test_loads_repository_synthetic_worker_example(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        path = (
+            repository_root
+            / "examples"
+            / "zdt1_benchmark"
+            / "synthetic_config.json"
+        )
+
+        configuration = load_configuration(path)
+
+        self.assertEqual(
+            configuration.worker.command,
+            ("hyperloop-synthetic-worker",),
+        )
+        self.assertEqual(
+            tuple(
+                parameter.name
+                for parameter in configuration.optimization.parameters
+            ),
+            ("x1", "x2", "x3", "x4"),
         )
 
     def test_reports_invalid_json_with_location(self) -> None:
@@ -276,6 +300,26 @@ class ConfigurationLoaderTests(unittest.TestCase):
             load_configuration("bad\x00path.json")
 
         self.assertTrue(caught.exception.issues[0].startswith("path:"))
+
+    def test_rejects_foreign_platform_absolute_worker_path(self) -> None:
+        document = self.valid_document()
+        worker = document["worker"]
+        assert isinstance(worker, dict)
+        foreign_path = (
+            "/usr/bin/python3"
+            if os.name == "nt"
+            else r"C:\Python313\python.exe"
+        )
+        worker["command"] = [foreign_path]
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "worker.command[0]: absolute path uses syntax for a different "
+            "operating system",
+            caught.exception.issues,
+        )
 
     def test_configuration_error_requires_at_least_one_issue(self) -> None:
         with self.assertRaises(ValueError):

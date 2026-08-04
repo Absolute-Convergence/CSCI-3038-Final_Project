@@ -1,5 +1,5 @@
-"""Focused tests for the ZDT1 benchmark's math: the ZDT1 formula itself
-(examples/zdt1_benchmark/worker.py) and the hypervolume computation used to
+"""Focused tests for the ZDT1 benchmark's math: the synthetic worker's ZDT1
+formula and the hypervolume computation used to
 score search results against it (compare_search_algorithms.py).
 
 This deliberately does not re-run real subprocess trials -- that path is
@@ -11,13 +11,22 @@ which is what these tests check.
 from __future__ import annotations
 
 import math
+import subprocess
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 
+from black_box_optimizer.metrics import read_trial_metrics
 from examples.zdt1_benchmark.compare_search_algorithms import (
+    build_argument_parser,
     hypervolume_2d,
     true_zdt1_hypervolume,
 )
-from examples.zdt1_benchmark.worker import _NUM_VARIABLES, zdt1
+from hyperloop_workers.synthetic_worker import _NUM_VARIABLES, zdt1
+
+
+_REPOSITORY = Path(__file__).resolve().parents[1]
 
 
 class Zdt1FormulaTests(unittest.TestCase):
@@ -68,6 +77,60 @@ class Zdt1FormulaTests(unittest.TestCase):
         self.assertAlmostEqual(f2, expected_f2)
 
 
+class SyntheticWorkerProcessTests(unittest.TestCase):
+    def test_distributed_module_runs_as_an_opaque_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            metrics_path = Path(temporary) / "metrics.csv"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "hyperloop_workers.synthetic_worker",
+                    "--x1",
+                    "0.25",
+                    "--x2",
+                    "0",
+                    "--x3",
+                    "0",
+                    "--x4",
+                    "0",
+                    "--metrics-out",
+                    str(metrics_path),
+                ],
+                cwd=_REPOSITORY,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                read_trial_metrics(metrics_path),
+                {"f1": 0.25, "f2": 0.5},
+            )
+
+
+class BenchmarkConfigurationTests(unittest.TestCase):
+    def test_default_runs_ten_thousand_real_worker_trials(self) -> None:
+        arguments = build_argument_parser().parse_args([])
+
+        total = 2 * arguments.seeds * arguments.trials_per_run
+        self.assertEqual(arguments.seeds, 10)
+        self.assertEqual(arguments.trials_per_run, 500)
+        self.assertEqual(total, 10_000)
+
+    def test_seed_count_supports_one_five_and_ten_thousand(self) -> None:
+        parser = build_argument_parser()
+
+        for seeds, expected_total in ((1, 1_000), (5, 5_000), (10, 10_000)):
+            with self.subTest(seeds=seeds):
+                arguments = parser.parse_args(["--seeds", str(seeds)])
+                total = 2 * arguments.seeds * arguments.trials_per_run
+                self.assertEqual(total, expected_total)
+
+
 class Hypervolume2DTests(unittest.TestCase):
     """Verify the dominated-area sweep against hand-worked geometry."""
 
@@ -103,7 +166,7 @@ class Hypervolume2DTests(unittest.TestCase):
 
 
 class TrueZdt1HypervolumeTests(unittest.TestCase):
-    """Verify the sampled true-front hypervolume against closed-form calculus."""
+    """Verify sampled true-front hypervolume against closed-form calculus."""
 
     def test_matches_closed_form_derivation(self) -> None:
         # For reference (1.1, 1.1), integrating the true front

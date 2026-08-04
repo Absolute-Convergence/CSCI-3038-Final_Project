@@ -2,7 +2,7 @@
   "worker": {
     "command": [
       "python",
-      "examples/iris_torch/worker.py"
+      "examples/iris_torch/iris_worker.py"
     ],
     "metrics_argument": "--metrics-out",
     "timeout_seconds": 120.0

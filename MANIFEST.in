@@ -1,0 +1,14 @@
+prune docs
+prune examples
+prune tests
+prune tools
+
+exclude AGENTS.md
+exclude Hyperloop.py
+exclude KNOWN_ISSUES.md
+exclude config.json
+exclude saved_configs/config.json
+exclude source_hygiene.json
+exclude test.py
+
+global-exclude __pycache__ *.py[cod]

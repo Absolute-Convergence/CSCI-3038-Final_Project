@@ -6,14 +6,21 @@ import json
 import sys
 import tempfile
 import unittest
+from importlib.util import find_spec
 from pathlib import Path
 
 from black_box_optimizer.application import initialize_application
 from black_box_optimizer.controller import ControllerState
 
 
+if find_spec("torch") is None:
+    raise unittest.SkipTest("PyTorch is optional and the Iris worker needs it")
+
+
 _REPOSITORY = Path(__file__).resolve().parents[2]
-_IRIS_WORKER = _REPOSITORY / "examples" / "iris_torch" / "worker.py"
+_IRIS_WORKER = (
+    _REPOSITORY / "examples" / "iris_torch" / "iris_worker.py"
+)
 
 
 class RealApplicationPipelineTests(unittest.TestCase):
