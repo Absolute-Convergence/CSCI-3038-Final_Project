@@ -56,20 +56,21 @@ from black_box_optimizer.application import initialize_application
 
 
 def _open_folder(path):
-    """Open `path` in the OS's file manager -- Windows, macOS, and Linux
-    each have their own way to do this, there's no single stdlib call that
-    works on all three (os.startfile only exists on Windows)."""
+    """Open a folder in the platform file manager without blocking Tkinter."""
+    folder = str(path)
+
     try:
+        folder = str(Path(path).resolve())
         if sys.platform == "win32":
-            os.startfile(path)  # Windows-only call, guarded by the check above
+            os.startfile(folder)
         elif sys.platform == "darwin":
-            subprocess.run(["open", str(path)], check=True)
+            subprocess.Popen(["open", folder], shell=False)
         else:
-            subprocess.run(["xdg-open", str(path)], check=True)
-    except Exception as e:
+            subprocess.Popen(["xdg-open", folder], shell=False)
+    except OSError as error:
         messagebox.showerror(
             "Could Not Open Folder",
-            f"{e}\n\nResults are still saved at:\n{path}",
+            f"{error}\n\nResults are still saved at:\n{folder}",
         )
 
 

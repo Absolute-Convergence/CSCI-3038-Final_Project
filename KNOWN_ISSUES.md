@@ -19,7 +19,11 @@ now dispatches on `sys.platform`: `os.startfile()` on Windows (unchanged
 from before), `open` on macOS, `xdg-open` on Linux, wrapped so a failure
 shows a dialog pointing at the results directory instead of crashing.
 Verified for real on macOS and on a real Windows machine before merging.
-PR #26.
+PR #26 corrected the platform dispatch. The follow-up uses nonblocking
+argument-list subprocesses with `shell=False`, resolves the reported folder
+location, and adds focused Windows, macOS, Linux, and launcher-failure tests.
+The GUI remains outside the separately verified core-package compatibility
+boundary.
 
 ### Invalid configuration paths leaked a raw `ValueError` on Windows
 
