@@ -1,7 +1,7 @@
 # Hyperloop v0.1.1 Package Release Checklist
 
-Status: package preparation in progress; nothing in this checklist authorizes
-publication by itself.
+Status: v0.1.1 is published on GitHub and production PyPI; all package-release
+gates are complete.
 
 ## Release Identity
 
@@ -94,7 +94,24 @@ does not declare Pillow as a GUI dependency in its package metadata.
   environment using only that index plus the public dependency index.
 - [x] Run the installed command and synthetic worker from outside the source
   checkout.
-- [ ] Create the v0.1.1 Git tag and GitHub release from the verified commit.
-- [ ] Upload the exact TestPyPI-validated archives to production PyPI.
-- [ ] Install `hyperloop-optimizer==0.1.1` from production PyPI and repeat the
+- [x] Create the v0.1.1 Git tag and GitHub release from the verified commit.
+- [x] Upload the exact TestPyPI-validated archives to production PyPI.
+- [x] Install `hyperloop-optimizer==0.1.1` from production PyPI and repeat the
   smoke test.
+
+## Publication Record
+
+- Release tag: `v0.1.1`, resolving to verified artifact commit
+  `d34d6cc81927f4251e5a8481f3e5ba2f7500ebef`.
+- GitHub release:
+  `https://github.com/Absolute-Convergence/CSCI-3038-Final_Project/releases/tag/v0.1.1`
+- PyPI release: `https://pypi.org/project/hyperloop-optimizer/0.1.1/`
+- Wheel SHA-256:
+  `2de2a5cc9f51c2d25e995789e707a9d1ceff3e62177bc22207a70193508873ff`
+- Source archive SHA-256:
+  `c15ffa552edf71f5f1efc590e3a5147760091488b46c17629b04524d683f7928`
+- Production verification: A fresh Python 3.13.14 environment downloaded
+  v0.1.1 and all dependencies only from production PyPI. `pip check` passed,
+  PyTorch was absent, both installed commands worked, and an outside-checkout
+  synthetic run produced four completed, valid, Pareto-eligible trials plus
+  every required report artifact.

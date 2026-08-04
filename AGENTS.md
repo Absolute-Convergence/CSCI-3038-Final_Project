@@ -190,7 +190,14 @@ the next person can resume without reconstructing recent decisions.
   contained no PyTorch, and completed a four-trial synthetic run from outside
   the checkout with four valid, Pareto-eligible records and all required
   reports.
-- Next work: Create the v0.1.1 Git tag and GitHub release from the verified
-  commit, then continue the production PyPI gates in
-  `docs/package-release-checklist.md`; the optional GUI fix does not block
-  package publication.
+- Production release: The `v0.1.1` tag resolves to verified artifact commit
+  `d34d6cc`. The public GitHub release and production PyPI release contain the
+  exact wheel and source archive validated on TestPyPI; their SHA-256 digests
+  match at all three locations. A fresh Python 3.13.14 environment installed
+  v0.1.1 and its dependencies only from production PyPI, passed `pip check`,
+  contained no PyTorch, exposed both commands, and completed an
+  outside-checkout four-trial synthetic run with all trials valid and eligible
+  and every required report present.
+- Next work: No v0.1.1 package-publication gate remains. Replace the temporary
+  account-wide PyPI token with a project-scoped token or Trusted Publishing
+  before a future release.
