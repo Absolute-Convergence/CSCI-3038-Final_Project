@@ -42,7 +42,15 @@ does not declare Pillow as a GUI dependency in its package metadata.
 
 ## Audit Evidence
 
-- Updated `main` baseline: 283 tests passed before package-preparation edits.
+- Updated `main` baseline: 363 tests passed before the package branch was
+  merged with the upstream bug-audit and NSGA-II crowding-distance fix.
+- Merged package tree: 372 tests collected on Windows; 371 pass and one errors
+  because an invalid configuration path leaks a raw `ValueError`. This new
+  Windows-specific defect is recorded in `KNOWN_ISSUES.md`.
+- Known-issue audit: all ten upstream open reports were reproduced on the
+  package branch. Together with the Windows-specific finding, eleven confirmed
+  defects remain open; no PyPI upload is approved while release blockers are
+  unresolved.
 - Generated-output barrier: `runs/`, `optimizer_runs/`, and ZDT1 comparison
   results are ignored.
 - Repeated-run test: an older two-trial Pareto front cannot enter a later
@@ -64,6 +72,11 @@ does not declare Pillow as a GUI dependency in its package metadata.
 
 ## Remaining Gates
 
+- [ ] Resolve the validation, CLI, cross-platform path, controller-state, and
+  persistence defects recorded in `KNOWN_ISSUES.md`.
+- [ ] Decide whether result reporting must be atomic across the entire artifact
+  group or whether the public persistence contract must explicitly promise
+  only per-file atomicity.
 - [ ] Run the final complete suite with PyTorch installed.
 - [ ] Run the repository source-hygiene checker after the last change.
 - [ ] Open a pull request and require the Windows, Ubuntu, macOS, and package

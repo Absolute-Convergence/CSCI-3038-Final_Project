@@ -161,4 +161,6 @@ the next person can resume without reconstructing recent decisions.
 - Next work: Classify the eleven open defects, obtain approval for
   any contract-affecting fixes, remediate all agreed package-release blockers,
   then rerun the complete test, hygiene, build, metadata, isolated-install,
-  and cross-platform CI gates before publication.
+  and cross-platform CI gates before publication. The unresolved gate and the
+  result-report atomicity decision are recorded in
+  `docs/package-release-checklist.md`.
