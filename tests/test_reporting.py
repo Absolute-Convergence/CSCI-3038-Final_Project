@@ -231,6 +231,18 @@ class ReporterTests(unittest.TestCase):
             (),
         )
 
+    def test_constructor_rejects_a_non_project_configuration(self) -> None:
+        with self.assertRaisesRegex(TypeError, "ProjectConfiguration"):
+            Reporter("not a configuration", self.run_directory)
+
+    def test_constructor_rejects_a_non_run_directory(self) -> None:
+        with self.assertRaisesRegex(TypeError, "RunDirectory"):
+            Reporter(self.configuration, "not a run directory")
+
+    def test_write_rejects_a_non_optimization_result(self) -> None:
+        with self.assertRaisesRegex(TypeError, "OptimizationResult"):
+            self.reporter.write("not a result")
+
 
 if __name__ == "__main__":
     unittest.main()

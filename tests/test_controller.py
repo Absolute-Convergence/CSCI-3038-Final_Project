@@ -532,6 +532,129 @@ class ControllerFinalizeTests(unittest.TestCase):
         self.assertIsNotNone(controller.result)
         self.assertEqual(controller.result.status, "failed")
 
+    def test_calling_finalize_again_directly_is_a_no_op(self) -> None:
+        # run() calling itself twice can't reach this: the second run()
+        # short-circuits at the STOPPED branch before ever calling
+        # _finalize() again. Calling the private method directly is the
+        # only way to exercise _finalize()'s own _reported guard.
+        controller = ApplicationController(
+            make_contract(),
+            _AlwaysFailingSearch(),
+            StopPolicyEvaluator(StopPolicy(max_trials=5)),
+            make_worker_spec(),
+            self.run_directory,
+            self.reporter,
+        )
+
+        result = controller.run()
+        controller._finalize()
+
+        self.assertIs(controller.result, result)
+        self.assertEqual(self.reporter.results, [result])
+
+    def test_finalize_retries_the_write_without_rebuilding_a_matching_result(
+        self,
+    ) -> None:
+        # Simulates retrying delivery after some external code resets
+        # _reported (e.g. after catching a ReportingError and wanting
+        # another attempt) -- the already-correct result must not be
+        # rebuilt from scratch, only re-delivered.
+        controller = ApplicationController(
+            make_contract(),
+            _AlwaysFailingSearch(),
+            StopPolicyEvaluator(StopPolicy(max_trials=5)),
+            make_worker_spec(),
+            self.run_directory,
+            self.reporter,
+        )
+
+        result = controller.run()
+        controller._reported = False
+        controller._finalize()
+
+        self.assertIs(controller.result, result)
+        self.assertEqual(self.reporter.results, [result, result])
+
+
+class ControllerInvariantGuardTests(unittest.TestCase):
+    """Defensive guards against internally-corrupted state.
+
+    None of these are reachable through the controller's real public
+    lifecycle -- each one requires forcing `state`/`_reported` directly to
+    simulate a hypothetical future bug, exactly the kind of "this should
+    never happen" guard that's worth pinning down with a real test rather
+    than trusting it silently.
+    """
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.run_directory = create_run_directory(self._tmpdir.name)
+        self.reporter = _RecordingReporter()
+
+    def _make_controller(self) -> ApplicationController:
+        return ApplicationController(
+            make_contract(),
+            _AlwaysFailingSearch(),
+            StopPolicyEvaluator(StopPolicy(max_trials=5)),
+            make_worker_spec(),
+            self.run_directory,
+            self.reporter,
+        )
+
+    def test_executing_without_a_candidate_raises(self) -> None:
+        controller = self._make_controller()
+        controller.state = ControllerState.EXECUTING
+
+        with self.assertRaisesRegex(RuntimeError, "without a candidate"):
+            controller.run()
+
+    def test_recording_without_a_candidate_raises(self) -> None:
+        controller = self._make_controller()
+        controller.state = ControllerState.RECORDING
+
+        with self.assertRaisesRegex(RuntimeError, "without a candidate"):
+            controller.run()
+
+    def test_stopped_without_a_result_raises(self) -> None:
+        controller = self._make_controller()
+        controller.state = ControllerState.STOPPED
+
+        with self.assertRaisesRegex(RuntimeError, "without a result"):
+            controller.run()
+
+    def test_unhandled_state_raises(self) -> None:
+        controller = self._make_controller()
+        controller.state = "not_a_real_state"
+
+        with self.assertRaisesRegex(RuntimeError, "Unhandled controller state"):
+            controller.run()
+
+    def test_stopped_without_a_result_during_interrupt_raises(self) -> None:
+        # Forces the exact inconsistency this guard exists for: _reported
+        # already true (so _finalize() early-returns without building a
+        # result) but no result was ever actually produced.
+        controller = ApplicationController(
+            make_contract(),
+            _InterruptedBeforeLaunchSearch(),
+            StopPolicyEvaluator(StopPolicy(max_trials=5)),
+            make_worker_spec(),
+            self.run_directory,
+            self.reporter,
+        )
+        controller._reported = True
+
+        with self.assertRaisesRegex(RuntimeError, "without a result"):
+            controller.run()
+
+    def test_finalize_without_a_termination_reason_raises(self) -> None:
+        controller = self._make_controller()
+
+        with self.assertRaisesRegex(
+            RuntimeError, "requires a termination reason"
+        ):
+            controller._finalize()
+
 
 if __name__ == "__main__":
     unittest.main()

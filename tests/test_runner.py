@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from black_box_optimizer.models import CandidateConfiguration, WorkerSpec
-from black_box_optimizer.runner import execute
+from black_box_optimizer.runner import _bounded_message, _output_text, execute
 
 
 def make_worker_spec(timeout: float = 30.0) -> WorkerSpec:
@@ -232,6 +232,54 @@ class RunnerTests(unittest.TestCase):
 
         self.assertIn("TOKEN=example-value", result["stderr"])
         self.assertIn("TOKEN=example-value", result["error_message"])
+
+    def test_interrupt_before_launch_completes_is_cancelled(self) -> None:
+        # Ctrl+C landing while Popen() itself is still starting the child
+        # process, before there's even a process to terminate/kill.
+        with patch(
+            "black_box_optimizer.runner.subprocess.Popen",
+            side_effect=KeyboardInterrupt(),
+        ):
+            result = execute(
+                make_worker_spec(), make_candidate(), "metrics.csv"
+            )
+
+        self.assertEqual(result["execution_status"], "cancelled")
+        self.assertIsNone(result["exit_code"])
+        self.assertFalse(result["timed_out"])
+        self.assertIn("before launch completed", result["error_message"])
+
+
+class BoundedMessageTests(unittest.TestCase):
+    """_bounded_message() directly -- the truncation math has an edge case
+    (a prefix that alone already meets or exceeds the limit) that no real
+    caller in this file can currently produce, since every prefix runner.py
+    builds is short and fixed-shape."""
+
+    def test_detail_is_appended_within_the_limit(self) -> None:
+        message = _bounded_message("Worker failed", "some detail")
+        self.assertEqual(message, "Worker failed: some detail")
+
+    def test_prefix_alone_at_or_over_the_limit_drops_the_detail(self) -> None:
+        long_prefix = "x" * 1_000
+        message = _bounded_message(long_prefix, "detail that cannot fit")
+        self.assertEqual(message, long_prefix)
+        self.assertEqual(len(message), 1_000)
+
+
+class OutputTextTests(unittest.TestCase):
+    """_output_text() directly -- runner.py always opens Popen with
+    text=True, so communicate() never actually returns bytes in real
+    usage; this pins down the conversion helper's own contract instead."""
+
+    def test_none_becomes_empty_string(self) -> None:
+        self.assertEqual(_output_text(None), "")
+
+    def test_bytes_are_decoded_as_utf8(self) -> None:
+        self.assertEqual(_output_text("café".encode("utf-8")), "café")
+
+    def test_str_passes_through_unchanged(self) -> None:
+        self.assertEqual(_output_text("already text"), "already text")
 
 
 if __name__ == "__main__":

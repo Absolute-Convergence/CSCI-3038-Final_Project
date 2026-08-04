@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 
 from black_box_optimizer.cli import main
 from black_box_optimizer.config_loader import ConfigurationError
+from black_box_optimizer.reporting import ReportingError
 
 
 def make_session(status: str, termination_reason: str):
@@ -69,6 +70,34 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(code, 130)
         self.assertIn("cancelled during initialization", stderr.getvalue())
+
+    def test_os_error_during_initialization_returns_one(self) -> None:
+        stderr = io.StringIO()
+        with patch(
+            "black_box_optimizer.cli.initialize_application",
+            side_effect=OSError("disk full"),
+        ):
+            with redirect_stderr(stderr):
+                code = main(["config.json"])
+
+        self.assertEqual(code, 1)
+        self.assertIn("Optimization failed", stderr.getvalue())
+        self.assertIn("disk full", stderr.getvalue())
+
+    def test_reporting_error_during_run_returns_one(self) -> None:
+        session = make_session("completed", "maximum_trials")
+        session.run.side_effect = ReportingError("could not write summary")
+        stderr = io.StringIO()
+        with patch(
+            "black_box_optimizer.cli.initialize_application",
+            return_value=session,
+        ):
+            with redirect_stderr(stderr):
+                code = main(["config.json"])
+
+        self.assertEqual(code, 1)
+        self.assertIn("Optimization failed", stderr.getvalue())
+        self.assertIn("could not write summary", stderr.getvalue())
 
 
 if __name__ == "__main__":
