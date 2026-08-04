@@ -124,39 +124,41 @@ the next person can resume without reconstructing recent decisions.
 
 - Last updated: 2026-08-03
 - Current state: Package preparation is active on
-  `work/2026-08-03-1923-package-release-audit`, based on updated `main` at
-  `10c1dba`. `pyproject.toml` targets the first PyPI publication as
-  `hyperloop-optimizer` v0.1.1 with the approved `hyperloop-optimizer` command;
-  `python -m black_box_optimizer` remains unchanged. The separately approved
-  `hyperloop-synthetic-worker` command launches the bundled worker without
-  interpreter-path guessing. The wheel includes core plus dependency-free
-  `hyperloop_workers.synthetic_worker`, while the Iris worker and GUI remain
-  outside it. Worker files are now explicitly named
-  `iris_worker.py` and `synthetic_worker.py`. Direct core, Iris, GUI, and
-  release-tool requirements are separated. See
-  `docs/package-release-checklist.md` for the boundary and remaining gates.
-- Cleanup: Mel's staged `git rm -r --cached optimizer_runs` is preserved as 515
-  index deletions; the local evidence still exists, is ignored by
-  `/optimizer_runs/`, and no files remain tracked there. A repeated-run test
-  proves reports and the Pareto front derive only from the new run's fresh
-  history. `/runs/` and ZDT1 comparison output remain ignored.
-- Decisions: One PyPI release is planned from the updated code as v0.1.1;
-  reusing v0.1.0 would conflict with the already-published GitHub tag at
-  `f2a4cbc`. Package users receive only NumPy and Matplotlib as direct runtime
-  requirements. Matplotlib may bring Pillow transitively for PNG reporting;
-  Pillow is not declared for the excluded GUI.
-- Verification: All 291 tests pass under Python 3.13.14 with PyTorch installed;
-  277 core-only tests pass with four Iris modules skipped when PyTorch is
-  absent. Source hygiene passes across 62 files. Fresh wheel and sdist builds
-  pass `twine check`; the wheel has 30 entries, only NumPy/Matplotlib direct
-  requirements, and no Iris, tests, GUI, or PyTorch files. An isolated install
-  ran the installed command and four valid synthetic trials. The full 5-seed x
-  500-trial x 2-algorithm ZDT1 audit reproduced the merged result: NSGA-II mean
-  hypervolume 0.3890 (44.4% optimal, stdev 0.0692) versus Random Search 0.2370
-  (27.0%, stdev 0.1568). Generated evidence remains ignored.
-- Next work: Integrate and audit the latest `origin/main` known-issue ledger,
-  then review this branch. Require the new Windows/Ubuntu/macOS core matrix and package
-  build job to pass before claiming cross-platform support. After merge, build
-  from the exact release commit, validate on TestPyPI, create the v0.1.1 GitHub
-  release/tag, publish the same archives to PyPI, and repeat the installed
-  production smoke test.
+  `work/2026-08-03-1923-package-release-audit`. The branch integrates
+  `origin/main` through `3a60d6c` and the local package checkpoint
+  `beaefa7`. `pyproject.toml` targets distribution
+  `hyperloop-optimizer` version 0.1.1. The approved installed commands are
+  `hyperloop-optimizer` and `hyperloop-synthetic-worker`; the existing
+  module CLI remains available. The wheel contains the optimizer core and the
+  dependency-free synthetic worker, while the Iris worker, GUI, tests, and
+  class-project material remain outside the installed package.
+- Cleanup: Checkpoint `beaefa7` removes 515 generated
+  `optimizer_runs/` artifacts from Git tracking while preserving the local
+  files under an ignored root directory. A repeated-run integration test
+  verifies each Pareto report is derived only from its own authoritative
+  result.
+- Upstream integration: PR #22's coverage work and PR #23's deterministic
+  NSGA-II tied-objective crowding-distance fix are integrated. The current
+  `KNOWN_ISSUES.md` records eleven open, independently reproduced defects. A
+  Windows-specific invalid-path error was found while merging the upstream
+  audit: `Path.open()` can leak a raw `ValueError` instead of the documented
+  `ConfigurationError`. The
+  negative-seed CLI failure and interrupted-finalization corruption are marked
+  critical; package publication is blocked pending triage and remediation.
+- Decisions: Publish one first PyPI release as v0.1.1 rather than reusing the
+  existing v0.1.0 Git tag. Core direct dependencies are NumPy and Matplotlib;
+  PyTorch stays exclusive to the Iris example, and Pillow may be installed
+  only transitively through Matplotlib. Mel approved the dedicated
+  `hyperloop-synthetic-worker` entry point so installed configurations do not
+  guess the owning Python executable.
+- Verification: Before the upstream merge, all 291 tests passed. After the
+  upstream merge, 371 of 372 tests pass; the single Windows invalid-path error
+  is recorded in `KNOWN_ISSUES.md`. The hygiene check passes across 62 source
+  files. Clean wheel and sdist builds passed
+  `twine check`, an isolated wheel install passed CLI and synthetic-worker
+  smoke tests, and the full 5-seed, 500-trial-per-algorithm ZDT1 benchmark
+  completed. The merged tree must be reverified before handoff.
+- Next work: Classify the eleven open defects, obtain approval for
+  any contract-affecting fixes, remediate all agreed package-release blockers,
+  then rerun the complete test, hygiene, build, metadata, isolated-install,
+  and cross-platform CI gates before publication.

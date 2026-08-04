@@ -274,6 +274,319 @@ class ConfigurationLoaderTests(unittest.TestCase):
 
         self.assertTrue(caught.exception.issues[0].startswith("path:"))
 
+    def test_rejects_unresolvable_path(self) -> None:
+        # A path containing a null byte fails during Path.resolve() itself,
+        # exercising the ValueError branch of _configuration_path rather
+        # than a missing-file OSError.
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration("bad\x00path.json")
+
+        self.assertTrue(caught.exception.issues[0].startswith("path:"))
+
+    def test_configuration_error_requires_at_least_one_issue(self) -> None:
+        with self.assertRaises(ValueError):
+            ConfigurationError(())
+
+    def test_rejects_non_object_root_document(self) -> None:
+        path = self.write_document([])
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(path)
+
+        self.assertEqual(
+            caught.exception.issues,
+            ("root: must be a JSON object",),
+        )
+
+    def test_rejects_worker_section_that_is_not_an_object(self) -> None:
+        document = self.valid_document()
+        document["worker"] = "python workers/worker.py"
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "worker: must be a JSON object",
+            caught.exception.issues,
+        )
+
+    def test_rejects_worker_command_that_is_not_an_array(self) -> None:
+        document = self.valid_document()
+        worker = document["worker"]
+        assert isinstance(worker, dict)
+        worker["command"] = "python workers/worker.py"
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "worker.command: must be a JSON array",
+            caught.exception.issues,
+        )
+
+    def test_rejects_worker_command_with_non_string_items(self) -> None:
+        document = self.valid_document()
+        worker = document["worker"]
+        assert isinstance(worker, dict)
+        worker["command"] = ["python", 5]
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "worker.command: every item must be a string",
+            caught.exception.issues,
+        )
+
+    def test_rejects_optimization_section_that_is_not_an_object(self) -> None:
+        document = self.valid_document()
+        document["optimization"] = []
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "optimization: must be a JSON object",
+            caught.exception.issues,
+        )
+
+    def test_rejects_optimization_section_with_missing_or_extra_fields(
+        self,
+    ) -> None:
+        document = self.valid_document()
+        optimization = document["optimization"]
+        assert isinstance(optimization, dict)
+        del optimization["objectives"]
+        optimization["notes"] = "unexpected"
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "optimization.objectives: required field is missing",
+            caught.exception.issues,
+        )
+        self.assertIn(
+            "optimization.notes: field is not allowed",
+            caught.exception.issues,
+        )
+
+    def test_rejects_optimization_parameters_and_objectives_that_are_not_arrays(
+        self,
+    ) -> None:
+        document = self.valid_document()
+        optimization = document["optimization"]
+        assert isinstance(optimization, dict)
+        optimization["parameters"] = {}
+        optimization["objectives"] = "validation_accuracy"
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "optimization.parameters: must be a JSON array",
+            caught.exception.issues,
+        )
+        self.assertIn(
+            "optimization.objectives: must be a JSON array",
+            caught.exception.issues,
+        )
+
+    def test_rejects_parameter_item_that_is_not_an_object(self) -> None:
+        document = self.valid_document()
+        optimization = document["optimization"]
+        assert isinstance(optimization, dict)
+        parameters = optimization["parameters"]
+        assert isinstance(parameters, list)
+        parameters[0] = "epochs"
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "optimization.parameters[0]: must be a JSON object",
+            caught.exception.issues,
+        )
+
+    def test_rejects_parameter_with_missing_or_extra_base_fields(
+        self,
+    ) -> None:
+        document = self.valid_document()
+        optimization = document["optimization"]
+        assert isinstance(optimization, dict)
+        parameters = optimization["parameters"]
+        assert isinstance(parameters, list)
+        parameters[0] = {"name": "epochs", "extra": True}
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "optimization.parameters[0].kind: required field is missing",
+            caught.exception.issues,
+        )
+        self.assertIn(
+            "optimization.parameters[0].extra: field is not allowed",
+            caught.exception.issues,
+        )
+
+    def test_rejects_parameter_with_invalid_kind(self) -> None:
+        document = self.valid_document()
+        optimization = document["optimization"]
+        assert isinstance(optimization, dict)
+        parameters = optimization["parameters"]
+        assert isinstance(parameters, list)
+        first_parameter = parameters[0]
+        assert isinstance(first_parameter, dict)
+        first_parameter["kind"] = "bogus"
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "optimization.parameters[0].kind: must be integer, float, "
+            "or categorical",
+            caught.exception.issues,
+        )
+
+    def test_rejects_numeric_parameter_missing_minimum_and_maximum(
+        self,
+    ) -> None:
+        document = self.valid_document()
+        optimization = document["optimization"]
+        assert isinstance(optimization, dict)
+        parameters = optimization["parameters"]
+        assert isinstance(parameters, list)
+        parameters[0] = {"name": "epochs", "kind": "integer"}
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "optimization.parameters[0].minimum: required field is missing",
+            caught.exception.issues,
+        )
+        self.assertIn(
+            "optimization.parameters[0].maximum: required field is missing",
+            caught.exception.issues,
+        )
+
+    def test_rejects_categorical_choices_that_are_not_an_array(self) -> None:
+        document = self.valid_document()
+        optimization = document["optimization"]
+        assert isinstance(optimization, dict)
+        parameters = optimization["parameters"]
+        assert isinstance(parameters, list)
+        categorical_parameter = parameters[2]
+        assert isinstance(categorical_parameter, dict)
+        categorical_parameter["choices"] = "8,16,32"
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "optimization.parameters[2].choices: must be a JSON array",
+            caught.exception.issues,
+        )
+
+    def test_rejects_objective_item_that_is_not_an_object(self) -> None:
+        document = self.valid_document()
+        optimization = document["optimization"]
+        assert isinstance(optimization, dict)
+        objectives = optimization["objectives"]
+        assert isinstance(objectives, list)
+        objectives[0] = "validation_accuracy"
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "optimization.objectives[0]: must be a JSON object",
+            caught.exception.issues,
+        )
+
+    def test_rejects_objective_with_invalid_direction(self) -> None:
+        document = self.valid_document()
+        optimization = document["optimization"]
+        assert isinstance(optimization, dict)
+        objectives = optimization["objectives"]
+        assert isinstance(objectives, list)
+        first_objective = objectives[0]
+        assert isinstance(first_objective, dict)
+        first_objective["direction"] = "up"
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "optimization.objectives[0].direction: must be minimize or "
+            "maximize",
+            caught.exception.issues,
+        )
+
+    def test_rejects_algorithm_section_that_is_not_an_object(self) -> None:
+        document = self.valid_document()
+        document["algorithm"] = []
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "algorithm: must be a JSON object",
+            caught.exception.issues,
+        )
+
+    def test_rejects_algorithm_section_with_missing_or_extra_fields(
+        self,
+    ) -> None:
+        document = self.valid_document()
+        algorithm = document["algorithm"]
+        assert isinstance(algorithm, dict)
+        del algorithm["seed"]
+        algorithm["notes"] = "unexpected"
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "algorithm.seed: required field is missing",
+            caught.exception.issues,
+        )
+        self.assertIn(
+            "algorithm.notes: field is not allowed",
+            caught.exception.issues,
+        )
+
+    def test_rejects_stop_policy_section_that_is_not_an_object(self) -> None:
+        document = self.valid_document()
+        document["stop_policy"] = []
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "stop_policy: must be a JSON object",
+            caught.exception.issues,
+        )
+
+    def test_rejects_stop_policy_section_with_missing_or_extra_fields(
+        self,
+    ) -> None:
+        document = self.valid_document()
+        document["stop_policy"] = {"notes": "unexpected"}
+
+        with self.assertRaises(ConfigurationError) as caught:
+            load_configuration(self.write_document(document))
+
+        self.assertIn(
+            "stop_policy.max_trials: required field is missing",
+            caught.exception.issues,
+        )
+        self.assertIn(
+            "stop_policy.notes: field is not allowed",
+            caught.exception.issues,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

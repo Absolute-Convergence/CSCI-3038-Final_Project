@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import unittest
 from dataclasses import FrozenInstanceError
 
@@ -149,6 +150,316 @@ class FoundationModelTests(unittest.TestCase):
                 kind=ParameterKind.CATEGORICAL,
                 choices=(16, 16),
             )
+
+    def test_parameter_definition_rejects_malformed_names(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"parameter names must match"
+        ):
+            ParameterDefinition(
+                name="1st_epoch",
+                kind=ParameterKind.INTEGER,
+                minimum=1,
+                maximum=10,
+            )
+        with self.assertRaisesRegex(
+            ValueError, r"parameter names must match"
+        ):
+            ParameterDefinition(
+                name="learning rate",
+                kind=ParameterKind.FLOAT,
+                minimum=0.0,
+                maximum=1.0,
+            )
+
+    def test_parameter_definition_rejects_non_enum_kind(self) -> None:
+        with self.assertRaisesRegex(
+            TypeError, r"kind must be a ParameterKind"
+        ):
+            ParameterDefinition(
+                name="epochs",
+                kind="integer",  # type: ignore[arg-type]
+                minimum=1,
+                maximum=10,
+            )
+
+    def test_integer_domain_rejects_non_integer_bounds(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"integer parameters require integer bounds"
+        ):
+            ParameterDefinition(
+                name="epochs",
+                kind=ParameterKind.INTEGER,
+                minimum=0.5,
+                maximum=10,
+            )
+
+    def test_integer_domain_rejects_choices(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"integer parameters cannot declare choices"
+        ):
+            ParameterDefinition(
+                name="epochs",
+                kind=ParameterKind.INTEGER,
+                minimum=1,
+                maximum=10,
+                choices=(1, 2),
+            )
+
+    def test_float_domain_rejects_non_numeric_bounds(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"float parameters require numeric bounds"
+        ):
+            ParameterDefinition(
+                name="learning_rate",
+                kind=ParameterKind.FLOAT,
+                minimum="0.0001",  # type: ignore[arg-type]
+                maximum=0.1,
+            )
+
+    def test_float_domain_rejects_infinite_bounds(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"float parameter bounds must be finite"
+        ):
+            ParameterDefinition(
+                name="learning_rate",
+                kind=ParameterKind.FLOAT,
+                minimum=math.inf,
+                maximum=1.0,
+            )
+
+    def test_float_domain_rejects_minimum_at_or_above_maximum(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"float minimum must be less than maximum"
+        ):
+            ParameterDefinition(
+                name="learning_rate",
+                kind=ParameterKind.FLOAT,
+                minimum=0.5,
+                maximum=0.5,
+            )
+
+    def test_float_domain_rejects_choices(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"float parameters cannot declare choices"
+        ):
+            ParameterDefinition(
+                name="learning_rate",
+                kind=ParameterKind.FLOAT,
+                minimum=0.0,
+                maximum=1.0,
+                choices=(0.1, 0.2),
+            )
+
+    def test_categorical_domain_rejects_bounds(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"categorical parameters cannot declare bounds"
+        ):
+            ParameterDefinition(
+                name="batch_size",
+                kind=ParameterKind.CATEGORICAL,
+                minimum=0,
+                choices=(8, 16, 32),
+            )
+
+    def test_categorical_domain_requires_choices(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"categorical parameters require choices"
+        ):
+            ParameterDefinition(
+                name="batch_size",
+                kind=ParameterKind.CATEGORICAL,
+            )
+
+    def test_categorical_domain_rejects_non_parameter_values(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            r"categorical choices must be finite int, float, or str values",
+        ):
+            ParameterDefinition(
+                name="use_dropout",
+                kind=ParameterKind.CATEGORICAL,
+                choices=(True, False),
+            )
+
+    def test_objective_rejects_empty_metric_name(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"metric_name must be a nonempty string"
+        ):
+            Objective(metric_name="   ", direction=Direction.MINIMIZE)
+
+    def test_objective_rejects_metric_name_with_surrounding_whitespace(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"metric_name cannot have surrounding whitespace"
+        ):
+            Objective(
+                metric_name=" validation_loss",
+                direction=Direction.MINIMIZE,
+            )
+
+    def test_objective_rejects_non_enum_direction(self) -> None:
+        with self.assertRaisesRegex(
+            TypeError, r"direction must be a Direction"
+        ):
+            Objective(
+                metric_name="validation_loss",
+                direction="minimize",  # type: ignore[arg-type]
+            )
+
+    def test_optimization_contract_requires_at_least_one_parameter(
+        self,
+    ) -> None:
+        objectives = (
+            Objective("validation_accuracy", Direction.MAXIMIZE),
+            Objective("validation_loss", Direction.MINIMIZE),
+        )
+        with self.assertRaisesRegex(
+            ValueError, r"an optimization contract needs a parameter"
+        ):
+            OptimizationContract((), objectives)
+
+    def test_optimization_contract_rejects_duplicate_parameter_names(
+        self,
+    ) -> None:
+        parameters = (
+            ParameterDefinition(
+                name="epochs", kind=ParameterKind.INTEGER, minimum=1, maximum=10
+            ),
+            ParameterDefinition(
+                name="epochs", kind=ParameterKind.INTEGER, minimum=1, maximum=20
+            ),
+        )
+        objectives = (
+            Objective("validation_accuracy", Direction.MAXIMIZE),
+            Objective("validation_loss", Direction.MINIMIZE),
+        )
+        with self.assertRaisesRegex(
+            ValueError, r"parameter names must be unique"
+        ):
+            OptimizationContract(parameters, objectives)
+
+    def test_optimization_contract_rejects_duplicate_objective_metrics(
+        self,
+    ) -> None:
+        parameters = (
+            ParameterDefinition(
+                name="epochs", kind=ParameterKind.INTEGER, minimum=1, maximum=10
+            ),
+        )
+        objectives = (
+            Objective("validation_loss", Direction.MAXIMIZE),
+            Objective("validation_loss", Direction.MINIMIZE),
+        )
+        with self.assertRaisesRegex(
+            ValueError, r"objective metric names must be unique"
+        ):
+            OptimizationContract(parameters, objectives)
+
+    def test_worker_spec_rejects_empty_command(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"command must contain nonempty strings"
+        ):
+            WorkerSpec(
+                command=(),
+                metrics_argument="--metrics-out",
+                timeout_seconds=1.0,
+            )
+
+    def test_worker_spec_rejects_blank_command_parts(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"command must contain nonempty strings"
+        ):
+            WorkerSpec(
+                command=("python", ""),
+                metrics_argument="--metrics-out",
+                timeout_seconds=1.0,
+            )
+
+    def test_worker_spec_rejects_non_string_metrics_argument(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"metrics_argument must be a string"
+        ):
+            WorkerSpec(
+                command=("python", "worker.py"),
+                metrics_argument=123,  # type: ignore[arg-type]
+                timeout_seconds=1.0,
+            )
+
+    def test_worker_spec_rejects_metrics_argument_without_prefix(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"metrics_argument must start with --"
+        ):
+            WorkerSpec(
+                command=("python", "worker.py"),
+                metrics_argument="metrics-out",
+                timeout_seconds=1.0,
+            )
+
+    def test_worker_spec_rejects_non_numeric_timeout(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"timeout_seconds must be numeric"
+        ):
+            WorkerSpec(
+                command=("python", "worker.py"),
+                metrics_argument="--metrics-out",
+                timeout_seconds="120",  # type: ignore[arg-type]
+            )
+
+    def test_worker_spec_rejects_infinite_timeout(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"timeout_seconds must be finite"
+        ):
+            WorkerSpec(
+                command=("python", "worker.py"),
+                metrics_argument="--metrics-out",
+                timeout_seconds=math.inf,
+            )
+
+    def test_worker_spec_rejects_non_positive_timeout(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"timeout_seconds must be positive"
+        ):
+            WorkerSpec(
+                command=("python", "worker.py"),
+                metrics_argument="--metrics-out",
+                timeout_seconds=0,
+            )
+
+    def test_algorithm_spec_rejects_blank_name(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"algorithm name must be a nonempty string"
+        ):
+            AlgorithmSpec(name="   ", seed=42)
+
+    def test_algorithm_spec_rejects_non_integer_seed(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"seed must be an integer"
+        ):
+            AlgorithmSpec(
+                name="random_search", seed=True  # type: ignore[arg-type]
+            )
+
+    def test_stop_policy_rejects_non_integer_max_trials(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"max_trials must be an integer"
+        ):
+            StopPolicy(max_trials=True)  # type: ignore[arg-type]
+
+    def test_candidate_requires_at_least_one_parameter(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, r"a candidate needs at least one parameter"
+        ):
+            CandidateConfiguration(parameters={})
+
+    def test_candidate_rejects_non_finite_parameter_values(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            r"candidate values must be finite int, float, or str values",
+        ):
+            CandidateConfiguration(parameters={"learning_rate": math.nan})
 
 
 if __name__ == "__main__":

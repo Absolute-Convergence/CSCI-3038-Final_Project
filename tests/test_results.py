@@ -187,6 +187,75 @@ class OptimizationResultValidationTests(unittest.TestCase):
                 status="completed",
             )
 
+    def test_history_rejects_non_trial_record_items(self) -> None:
+        with self.assertRaisesRegex(TypeError, "TrialRecord"):
+            OptimizationResult(
+                history=("not a record",),
+                pareto_front=ParetoFront(()),
+                termination_reason="maximum_trials",
+                status="no_eligible_trials",
+            )
+
+    def test_pareto_front_must_be_a_pareto_front_instance(self) -> None:
+        with self.assertRaisesRegex(TypeError, "ParetoFront"):
+            OptimizationResult(
+                history=(),
+                pareto_front=(),
+                termination_reason="maximum_trials",
+                status="no_eligible_trials",
+            )
+
+    def test_status_must_be_a_known_value(self) -> None:
+        with self.assertRaisesRegex(ValueError, "status must be one of"):
+            OptimizationResult(
+                history=(),
+                pareto_front=ParetoFront(()),
+                termination_reason="maximum_trials",
+                status="bogus_status",
+            )
+
+    def test_history_cannot_contain_duplicate_trial_ids(self) -> None:
+        with self.assertRaisesRegex(ValueError, "duplicate trial IDs"):
+            OptimizationResult(
+                history=(make_record(0), make_record(0)),
+                pareto_front=ParetoFront(()),
+                termination_reason="maximum_trials",
+                status="completed",
+            )
+
+    def test_completed_status_rejects_an_abnormal_termination_reason(
+        self,
+    ) -> None:
+        # "completed" is only ever reached via maximum_trials or
+        # search_exhausted -- any other reason paired with it is invalid
+        # regardless of what the Pareto front looks like.
+        with self.assertRaisesRegex(ValueError, "normal termination"):
+            OptimizationResult(
+                history=(),
+                pareto_front=ParetoFront(()),
+                termination_reason="user_cancelled",
+                status="completed",
+            )
+
+    def test_failed_status_requires_fatal_error_reason(self) -> None:
+        with self.assertRaisesRegex(ValueError, "fatal_error termination"):
+            OptimizationResult(
+                history=(),
+                pareto_front=ParetoFront(()),
+                termination_reason="user_cancelled",
+                status="failed",
+            )
+
+    def test_no_eligible_trials_status_requires_an_empty_front(self) -> None:
+        record = make_record(0)
+        with self.assertRaisesRegex(ValueError, "empty ParetoFront"):
+            OptimizationResult(
+                history=(record,),
+                pareto_front=ParetoFront((record,)),
+                termination_reason="maximum_trials",
+                status="no_eligible_trials",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
