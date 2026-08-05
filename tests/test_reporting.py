@@ -26,7 +26,9 @@ from black_box_optimizer.records import TrialRecord
 from black_box_optimizer.reporting import (
     Reporter,
     ReportingError,
+    _grid_shape,
     _label_extreme_points,
+    _pareto_plot,
 )
 from black_box_optimizer.results import build_optimization_result
 
@@ -358,6 +360,78 @@ class LabelExtremePointsTests(unittest.TestCase):
         labels = self.label_calls(records)
 
         self.assertEqual(labels, ["trial 9", "trial 9"])
+
+
+class GridShapeTests(unittest.TestCase):
+    def test_two_objectives_need_exactly_one_plot(self) -> None:
+        # C(2, 2) == 1 pair
+        self.assertEqual(_grid_shape(1), (1, 1))
+
+    def test_three_objectives_need_a_grid_that_fits_all_three_pairs(
+        self,
+    ) -> None:
+        # C(3, 2) == 3 pairs
+        rows, columns = _grid_shape(3)
+        self.assertGreaterEqual(rows * columns, 3)
+
+    def test_five_objectives_need_a_roughly_square_ten_plot_grid(
+        self,
+    ) -> None:
+        # C(5, 2) == 10 pairs
+        rows, columns = _grid_shape(10)
+        self.assertGreaterEqual(rows * columns, 10)
+        self.assertLessEqual(abs(rows - columns), 1)
+
+
+class ParetoPlotMultiObjectiveTests(unittest.TestCase):
+    def make_configuration(self, objective_count: int) -> ProjectConfiguration:
+        objectives = tuple(
+            Objective(f"objective_{index}", Direction.MAXIMIZE)
+            for index in range(objective_count)
+        )
+        return ProjectConfiguration(
+            worker=WorkerSpec(
+                command=("python3", "worker.py"),
+                metrics_argument="--metrics-out",
+                timeout_seconds=30.0,
+            ),
+            optimization=OptimizationContract(
+                parameters=(
+                    ParameterDefinition("x", ParameterKind.FLOAT, 0.0, 1.0),
+                ),
+                objectives=objectives,
+            ),
+            algorithm=AlgorithmSpec("random_search", seed=1),
+            stop_policy=StopPolicy(max_trials=3),
+        )
+
+    def make_record(
+        self, trial_id: int, objective_count: int
+    ) -> TrialRecord:
+        return TrialRecord(
+            trial_id=trial_id,
+            parameters={"x": 0.5},
+            metrics={
+                f"objective_{index}": float(trial_id + index)
+                for index in range(objective_count)
+            },
+            execution_status="completed",
+            metrics_status="valid",
+            runtime_seconds=0.1,
+            exit_code=0,
+            timed_out=False,
+        )
+
+    def test_four_objectives_render_without_error(self) -> None:
+        configuration = self.make_configuration(4)
+        records = tuple(self.make_record(i, 4) for i in range(3))
+        result = build_optimization_result(
+            records, configuration.optimization, "maximum_trials"
+        )
+
+        image = _pareto_plot(result, configuration)
+
+        self.assertTrue(image.startswith(b"\x89PNG\r\n\x1a\n"))
 
 
 if __name__ == "__main__":
