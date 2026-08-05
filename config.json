@@ -49,10 +49,9 @@
     ]
   },
   "algorithm": {
-    "name": "nsga2",
-    "seed": 1
+    "name": "random_search"
   },
   "stop_policy": {
-    "max_trials": 5
+    "max_trials": 20
   }
 }

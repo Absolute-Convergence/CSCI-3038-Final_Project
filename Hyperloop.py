@@ -264,7 +264,7 @@ class ConfigApp:
 
         ttk.Label(frame, text="Seed:").grid(row=1, column=0, sticky="w")
         self.seed_entry = ttk.Entry(frame, width=20)
-        self.seed_entry.insert(0, "42")
+        self.seed_entry.insert(0, "")
         self.seed_entry.grid(row=1, column=1, pady=2, sticky="w")
 
         ttk.Label(frame, text="Max Trials:").grid(row=2, column=0, sticky="w")
@@ -553,7 +553,9 @@ class ConfigApp:
                 }
             )
 
-        return {
+        seed_val = self.seed_entry.get().strip()
+
+        config = {
             "worker": {
                 "command": cmd,
                 "metrics_argument": self.metrics_entry.get().strip(),
@@ -564,13 +566,17 @@ class ConfigApp:
                 "objectives": objs_out,
             },
             "algorithm": {
-                "name": self.algo_entry.get().strip(),
-                "seed": int(self.seed_entry.get()),
+                "name": self.algo_entry.get().strip()
             },
             "stop_policy": {
                 "max_trials": int(self.max_trials_entry.get()),
             },
         }
+
+        if seed_val:
+            config["algorithm"]["seed"] = int(seed_val)
+
+        return config
 
     def generate_json(self):
         try:

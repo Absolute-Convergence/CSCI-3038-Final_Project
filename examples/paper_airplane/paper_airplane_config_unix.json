@@ -49,8 +49,7 @@
     ]
   },
   "algorithm": {
-    "name": "nsga2",
-    "seed": 42
+    "name": "nsga2"
   },
   "stop_policy": {
     "max_trials": 150
