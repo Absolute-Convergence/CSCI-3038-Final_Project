@@ -43,7 +43,7 @@
 # =============================================================================
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from PIL import Image, ImageTk
 import os
 import subprocess
@@ -72,7 +72,6 @@ def _open_folder(path):
             "Could Not Open Folder",
             f"{error}\n\nResults are still saved at:\n{folder}",
         )
-
 
 def get_asset_path(relative_path):
     """Get absolute path to resource relative to this script file"""
@@ -127,7 +126,34 @@ class ConfigApp:
         self.build_algorithm_section()
         self.build_footer()
 
+    def browse_worker(self):
+        filename = filedialog.askopenfilename(
+            title="Select Worker Script", 
+            filetypes=[("Python Files", "*.py")],
+            initialdir=os.path.join(Path(__file__).parent, "examples")
+        )
 
+        if filename:
+            self.worker_path.set(filename)
+            self.validate_worker()
+
+    def validate_worker(self):
+        path = Path(self.worker_path.get())
+
+        if path.is_file():
+            self.worker_status.config(
+                text="✓ Worker Found",
+                foreground="green"
+            )
+            return True
+
+        self.worker_status.config(
+            text="✗ Worker Not Found",
+            foreground="red"
+        )
+        return False
+
+    
     def build_worker_section(self):
         frame = ttk.LabelFrame(self.scrollable_frame, text="Worker Configuration", padding=10)
         frame.pack(fill="x", pady=5)
@@ -295,7 +321,8 @@ class ConfigApp:
     def build_config_dict(self):
         """Build the optimizer configuration dictionary."""
 
-        cmd = ["python", os.path.join("examples", "paper_airplane", self.cmd_entry.get().strip())]
+        cmd = [sys.executable, self.worker_path.get()]
+
         timeout = float(self.timeout_entry.get())
 
         params_out = []
@@ -419,7 +446,14 @@ class ConfigApp:
 
     def run_loop(self):
         """Save the configuration and launch the optimizer."""
-
+        
+        if not self.validate_worker():
+            messagebox.showerror(
+                "Invalid Worker",
+                "Please select a valid worker script."
+            )
+            return
+        
         self.stop_requested.clear()
 
         try:
