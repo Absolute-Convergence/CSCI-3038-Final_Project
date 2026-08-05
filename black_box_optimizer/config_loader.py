@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import secrets
 from collections.abc import Callable, Iterable
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TypeVar
@@ -27,6 +28,11 @@ _ModelT = TypeVar("_ModelT")
 _PATH_SUFFIXES = frozenset(
     {".bat", ".cmd", ".exe", ".ps1", ".py", ".pyw", ".sh"}
 )
+
+# algorithm.seed is optional; when omitted, a fresh seed is generated in
+# this range and written into the resolved configuration so the exact
+# run can be reproduced later just by supplying it explicitly.
+_GENERATED_SEED_UPPER_BOUND = 1_000_000
 
 
 class ConfigurationError(ValueError):
@@ -392,11 +398,10 @@ def _build_algorithm(
     section = _require_object(value, "algorithm", issues)
     if section is None:
         return None
-    required = {"name", "seed"}
     if not _check_keys(
         section,
-        required=required,
-        allowed=required,
+        required={"name"},
+        allowed={"name", "seed"},
         location="algorithm",
         issues=issues,
     ):
@@ -410,12 +415,23 @@ def _build_algorithm(
         valid = sorted(ALGORITHM_REGISTRY)
         issues.append(f"algorithm.name: must be one of {valid}")
         return None
+
+    # A user who doesn't care about reproducibility shouldn't have to
+    # invent a seed just to get a run started. One gets generated here
+    # instead, and flows into the resolved configuration written to disk
+    # so the exact run can still be reproduced later just by supplying
+    # this same value explicitly.
+    if "seed" in section:
+        seed = section["seed"]
+    else:
+        seed = secrets.randbelow(_GENERATED_SEED_UPPER_BOUND)
+
     return _construct(
         "algorithm",
         issues,
         lambda: AlgorithmSpec(
             name=section["name"],  # type: ignore[arg-type]
-            seed=section["seed"],  # type: ignore[arg-type]
+            seed=seed,  # type: ignore[arg-type]
         ),
     )
 

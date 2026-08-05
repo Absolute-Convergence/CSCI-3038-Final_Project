@@ -1,7 +1,7 @@
 """
 nsga2.py
 
-An optional, updated, and totally Emilyfied NSGA-II search algorithm.
+An optional, updated, and totally Emilyfied NSGA2 search algorithm.
 
 RandomSearch starts fresh every time propose() is called but NSGA2 learns
 from completed trials (nice!) by working in generations:
