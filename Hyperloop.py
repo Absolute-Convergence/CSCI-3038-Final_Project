@@ -16,7 +16,6 @@
 # - Configure single or multi-objective optimization problems.
 # - Select optimization algorithm and stopping criteria.
 # - Preview generated JSON configuration.
-# - Save configuration files for future use.
 # - Launch optimization runs directly from the GUI.
 #
 # Architecture
@@ -35,8 +34,7 @@
 # -------------------
 # - Integrated results viewer
 # - Improved JSON preview with save options
-# - Progress reporting during optimization
-# - Run history management
+# - Save configuration files for future use.
 # - Standalone executable distribution
 #
 # =============================================================================
