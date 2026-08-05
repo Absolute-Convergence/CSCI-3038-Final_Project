@@ -24,7 +24,11 @@ _VALID_RESULT_STATUSES = (
     "cancelled",
     "failed",
 )
-_NORMAL_TERMINATION_REASONS = ("maximum_trials", "search_exhausted")
+_NORMAL_TERMINATION_REASONS = (
+    "maximum_trials",
+    "search_exhausted",
+    "excessive_failures",
+)
 
 
 @dataclass(frozen=True, slots=True)

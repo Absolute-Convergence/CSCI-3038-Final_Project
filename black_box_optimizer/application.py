@@ -38,7 +38,9 @@ def initialize_application(
     """Validate configuration, create outputs, and compose the controller."""
     configuration = load_configuration(configuration_path)
     algorithm = create_algorithm(configuration.algorithm)
-    stop_policy = StopPolicyEvaluator(configuration.stop_policy)
+    stop_policy = StopPolicyEvaluator(
+        configuration.stop_policy, configuration.optimization
+    )
     run_directory = create_run_directory(output_directory)
     reporter = Reporter(configuration, run_directory)
     reporter.write_resolved_configuration()
