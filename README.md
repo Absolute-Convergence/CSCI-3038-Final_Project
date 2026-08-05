@@ -249,6 +249,12 @@ See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for reproduced defects in merged code.
 
 ## Install and Run Hyperloop
 
+`worker.command` in a project configuration is the exact command that
+already runs your worker on your own machine, so it is inherently
+OS-specific -- Hyperloop never inspects or launches Python itself, it
+just execs what you give it. Every example below is shown for both
+Windows and macOS/Linux; use whichever matches your machine.
+
 Install the released distribution and invoke its dedicated command with a
 project configuration:
 
@@ -257,20 +263,60 @@ py -3.13 -m pip install hyperloop-optimizer
 hyperloop-optimizer path\to\config.json --output-dir runs
 ```
 
+```bash
+python3 -m pip install hyperloop-optimizer
+hyperloop-optimizer path/to/config.json --output-dir runs
+```
+
 The existing module command remains supported:
 
 ```powershell
 py -3.13 -m black_box_optimizer path\to\config.json --output-dir runs
 ```
 
+```bash
+python3 -m black_box_optimizer path/to/config.json --output-dir runs
+```
+
 From a source checkout, install the core package in editable mode. Install the
-Iris dependency separately only when running that example:
+Iris dependency separately only when running that example. `iris_config.json`
+uses Windows' `py` launcher for its worker command; there is currently no
+macOS/Linux example configuration for Iris specifically, so on those
+platforms either edit `worker.command` to `["python3", "iris_worker.py"]`
+yourself or use the Paper Airplane example below instead, which ships a
+config for both platforms already:
 
 ```powershell
 py -3.13 -m pip install -e .
 py -3.13 -m pip install -r requirements-iris.txt
 py -3.13 -m black_box_optimizer `
   examples\iris_torch\iris_config.json `
+  --output-dir runs
+```
+
+```bash
+python3 -m pip install -e .
+python3 -m pip install -r requirements-iris.txt
+python3 -m black_box_optimizer \
+  examples/iris_torch/iris_config.json \
+  --output-dir runs
+```
+
+The source checkout also includes the Paper Airplane example: a fun,
+near-instant worker (pure arithmetic, no ML training) with a genuine,
+mathematically known-optimal Pareto front, useful for demos or for
+seeing real multi-objective search results in seconds instead of
+minutes. It ships a working config for both platforms already:
+
+```powershell
+py -3.13 -m black_box_optimizer `
+  examples\paper_airplane\paper_airplane_config.json `
+  --output-dir runs
+```
+
+```bash
+python3 -m black_box_optimizer \
+  examples/paper_airplane/paper_airplane_config_unix.json \
   --output-dir runs
 ```
 
@@ -282,11 +328,21 @@ configuration never needs to guess which Python interpreter owns Hyperloop:
 hyperloop-synthetic-worker --help
 ```
 
+```bash
+hyperloop-synthetic-worker --help
+```
+
 The source checkout includes a ready-to-run configuration:
 
 ```powershell
 hyperloop-optimizer `
   examples\zdt1_benchmark\synthetic_config.json `
+  --output-dir runs
+```
+
+```bash
+hyperloop-optimizer \
+  examples/zdt1_benchmark/synthetic_config.json \
   --output-dir runs
 ```
 
@@ -300,6 +356,10 @@ per algorithm, and 500 trials per seeded run.
 py -3.13 -m examples.zdt1_benchmark.compare_search_algorithms
 ```
 
+```bash
+python3 -m examples.zdt1_benchmark.compare_search_algorithms
+```
+
 Use one or five seeds for the shorter 1,000- or 5,000-trial tiers while
 keeping 500 trials in each independent run. The unchanged default is the
 10,000-trial release-evidence tier:
@@ -308,6 +368,20 @@ keeping 500 trials in each independent run. The unchanged default is the
 py -3.13 -m examples.zdt1_benchmark.compare_search_algorithms --seeds 1
 py -3.13 -m examples.zdt1_benchmark.compare_search_algorithms --seeds 5
 py -3.13 -m examples.zdt1_benchmark.compare_search_algorithms
+```
+
+```bash
+python3 -m examples.zdt1_benchmark.compare_search_algorithms --seeds 1
+python3 -m examples.zdt1_benchmark.compare_search_algorithms --seeds 5
+python3 -m examples.zdt1_benchmark.compare_search_algorithms
+```
+
+Independent seed/algorithm runs can execute concurrently instead of one
+at a time -- this only affects wall-clock time, never results, since
+each run is fully independent:
+
+```bash
+python3 -m examples.zdt1_benchmark.compare_search_algorithms --jobs 8
 ```
 
 Each invocation creates a unique `run_*` directory. It contains the resolved
@@ -336,6 +410,114 @@ wheel before running the core-compatible test suite, dependency validation,
 source hygiene check, and installed synthetic-worker smoke test. The optional
 Tkinter GUI and PyTorch Iris example are outside that package compatibility
 claim.
+
+## Bring Your Own Worker
+
+The three examples above (Iris, ZDT1, Paper Airplane) each pair a config
+file with a worker script. To optimize your own program instead, you
+need both pieces yourself. This section documents the exact contract
+for each, verified directly against the loader and runner code -- not
+just inferred from the examples.
+
+### The worker contract
+
+Your worker can be written in any language, as long as it's an
+executable command. Hyperloop never imports or inspects it -- it just
+runs your `worker.command` as a subprocess, once per trial, with two
+kinds of arguments appended automatically:
+
+1. **One `--<parameter-name> <value>` flag per declared parameter**,
+   with underscores converted to dashes. A parameter named
+   `learning_rate` arrives as `--learning-rate 0.01`.
+2. **Your configured metrics flag**, pointing at a file path your
+   worker must write its results to. If `metrics_argument` is
+   `"--metrics-out"`, your worker receives `--metrics-out /some/path.csv`.
+
+Your worker must write that file as a CSV with **exactly two rows**: a
+header row naming each metric, then one data row of numeric values.
+Nothing else -- no extra rows, no missing header/data row.
+
+```csv
+validation_accuracy,validation_loss
+0.94,0.18
+```
+
+A worker that exits with a nonzero code, times out, or writes anything
+else is recorded as a failed trial rather than crashing the run -- see
+`examples/iris_torch/iris_worker.py` or
+`examples/paper_airplane/paper_airplane_worker.py` for complete,
+minimal reference implementations.
+
+### The config schema
+
+A project configuration is one JSON file with four required top-level
+sections: `worker`, `optimization`, `algorithm`, `stop_policy`.
+
+```json
+{
+  "worker": {
+    "command": ["python3", "your_worker.py"],
+    "metrics_argument": "--metrics-out",
+    "timeout_seconds": 60.0
+  },
+  "optimization": {
+    "parameters": [
+      {
+        "name": "learning_rate",
+        "kind": "float",
+        "minimum": 0.0001,
+        "maximum": 0.1
+      },
+      {
+        "name": "batch_size",
+        "kind": "categorical",
+        "choices": [8, 16, 32]
+      }
+    ],
+    "objectives": [
+      { "metric_name": "validation_accuracy", "direction": "maximize" },
+      { "metric_name": "validation_loss", "direction": "minimize" }
+    ]
+  },
+  "algorithm": {
+    "name": "nsga2"
+  },
+  "stop_policy": {
+    "max_trials": 150
+  }
+}
+```
+
+- **`worker.command`** -- an array of strings, the exact command that
+  already runs your worker on your machine (see the OS-specific note
+  above). A relative path in it is resolved relative to the config
+  file's own directory, not your current working directory.
+- **`worker.metrics_argument`** -- the flag name your worker expects
+  for its output file path.
+- **`worker.timeout_seconds`** -- how long one trial is allowed to run
+  before being killed and recorded as `timed_out`.
+- **`optimization.parameters`** -- each needs `name` and `kind`. `kind`
+  is `"float"`, `"integer"`, or `"categorical"`. Float/integer
+  parameters also need `minimum`/`maximum`; categorical parameters need
+  a `choices` array instead.
+- **`optimization.objectives`** -- each needs `metric_name` (must match
+  a column your worker's metrics CSV writes) and `direction`, either
+  `"maximize"` or `"minimize"`. At least two objectives are required --
+  this is a multi-objective optimizer.
+- **`algorithm.name`** -- `"random_search"` or `"nsga2"`. NSGA2 needs a
+  realistic trial budget to show its advantage: on this project's own
+  ZDT1 benchmark it wasn't statistically distinguishable from
+  random_search below roughly 150 trials, and its final quality kept
+  improving well past that (see
+  [docs/decisions/2026-08-04-nsga2-evolution-and-evaluation.md](docs/decisions/2026-08-04-nsga2-evolution-and-evaluation.md)
+  for the full data). For genuinely small budgets, random_search is the
+  safer default.
+- **`algorithm.seed`** -- optional. If omitted, a fresh seed is
+  generated automatically and reported back at the end of the run
+  (printed to the terminal and saved in `resolved_config.json`) --
+  supply that same value later to reproduce the exact run.
+- **`stop_policy.max_trials`** -- a positive integer, the hard ceiling
+  on how many trials this run will attempt.
 
 ## MVP Boundaries
 
