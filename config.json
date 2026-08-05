@@ -1,8 +1,8 @@
 {
   "worker": {
     "command": [
-      "python",
-      "examples\\paper_airplane\\paper_airplane_worker.py"
+      "C:\\Users\\wanna\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+      "C:\\dev\\final_proj\\CSCI-3038-Final_Project\\examples\\iris_torch\\iris_worker.py"
     ],
     "metrics_argument": "--metrics-out",
     "timeout_seconds": 120.0
@@ -10,52 +10,49 @@
   "optimization": {
     "parameters": [
       {
-        "name": "wing_span_cm",
+        "name": "learning_rate",
         "kind": "float",
-        "minimum": 5.0,
-        "maximum": 20.0
+        "minimum": 0.0001,
+        "maximum": 0.1
       },
       {
-        "name": "nose_weight_g",
-        "kind": "float",
-        "minimum": 0.0,
-        "maximum": 5.0
+        "name": "hidden_size",
+        "kind": "integer",
+        "minimum": 4,
+        "maximum": 128
       },
       {
-        "name": "wing_angle_deg",
-        "kind": "float",
-        "minimum": 0.0,
-        "maximum": 45.0
+        "name": "epochs",
+        "kind": "integer",
+        "minimum": 5,
+        "maximum": 100
       },
       {
-        "name": "fold_sharpness",
-        "kind": "float",
-        "minimum": 0.0,
-        "maximum": 1.0
-      },
-      {
-        "name": "paper_thickness_gsm",
-        "kind": "float",
-        "minimum": 60.0,
-        "maximum": 160.0
+        "name": "batch_size",
+        "kind": "categorical",
+        "choices": [
+          8,
+          16,
+          32
+        ]
       }
     ],
     "objectives": [
       {
-        "metric_name": "flight_distance_m",
+        "metric_name": "validation_accuracy",
         "direction": "maximize"
       },
       {
-        "metric_name": "landing_accuracy_pct",
-        "direction": "maximize"
+        "metric_name": "training_time_seconds",
+        "direction": "minimize"
       }
     ]
   },
   "algorithm": {
-    "name": "nsga2",
+    "name": "random_search",
     "seed": 42
   },
   "stop_policy": {
-    "max_trials": 150
+    "max_trials": 20
   }
 }

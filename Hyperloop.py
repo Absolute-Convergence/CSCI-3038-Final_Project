@@ -95,7 +95,7 @@ class ConfigApp:
     def __init__(self, root):
         self.root = root
         self.root.title("HyperLoop")
-        self.root.geometry("620x710")
+        self.root.geometry("620x750")
         self.app_icon = set_icon(os.path.join("assets", "img", "HyperLoop.png"))
         if self.app_icon:
             self.root.iconphoto(False, self.app_icon)
@@ -111,6 +111,7 @@ class ConfigApp:
             "<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
+
         canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
@@ -119,7 +120,8 @@ class ConfigApp:
 
         self.parameters = []
         self.objectives = []
-        
+
+        self.available_workers = self.discover_workers()
         self.build_worker_section()
         self.build_parameters_section()
         self.build_objectives_section()
@@ -128,13 +130,24 @@ class ConfigApp:
 
     def browse_worker(self):
         filename = filedialog.askopenfilename(
-            title="Select Worker Script", 
+            title="Select Worker Script",
             filetypes=[("Python Files", "*.py")],
-            initialdir=os.path.join(Path(__file__).parent, "examples")
+            initialdir=Path(__file__).parent / "examples",
         )
 
         if filename:
-            self.worker_path.set(filename)
+            path = Path(filename)
+
+            self.worker_path.set(str(path))
+
+            # Add it if it wasn't discovered
+            if path.name not in self.available_workers:
+                self.available_workers[path.name] = path
+                self.worker_combo["values"] = (
+                    list(self.available_workers.keys()) + ["Browse..."]
+                )
+
+            self.worker_choice.set(path.name)
             self.validate_worker()
 
     def validate_worker(self):
@@ -152,30 +165,143 @@ class ConfigApp:
             foreground="red"
         )
         return False
-
     
     def build_worker_section(self):
-        frame = ttk.LabelFrame(self.scrollable_frame, text="Worker Configuration", padding=10)
-        frame.pack(fill="x", pady=5)
-        
-        ttk.Label(frame, text="Worker file path").grid(row=0, column=0, sticky="w")
-        self.cmd_entry = ttk.Entry(frame, width=40)
-        self.cmd_entry.insert(
-            0,
-            #"python, examples/iris_torch/iris_worker.py",
-            "iris_worker.py"
+        frame = ttk.LabelFrame(
+            self.scrollable_frame,
+            text="Worker Configuration",
+            padding=10,
         )
-        self.cmd_entry.grid(row=0, column=1, pady=2)
-        
-        ttk.Label(frame, text="Metrics Argument:").grid(row=1, column=0, sticky="w")
+        frame.pack(fill="x", pady=5)
+
+        ttk.Label(frame, text="Worker Script:").grid(row=0, column=0, sticky="w")
+
+        default_worker = (
+            Path(__file__).parent
+            / "examples"
+            / "paper_airplane"
+            / "iris_worker.py"
+        )
+
+        self.worker_path = tk.StringVar(value=str(default_worker))
+
+        # self.worker_entry = ttk.Entry(
+        #     frame,
+        #     textvariable=self.worker_path,
+        #     width=40,
+        # )
+
+        self.worker_choice = tk.StringVar()
+
+        self.worker_combo = ttk.Combobox(
+            frame,
+            textvariable=self.worker_choice,
+            values=list(self.available_workers.keys()) + ["Browse..."],
+            state="readonly",
+            width=35,
+        )
+
+        self.worker_combo.grid(row=0, column=1, padx=5, pady=2, sticky="ew")
+
+        if self.available_workers:
+            first = sorted(self.available_workers.keys())[0]
+            self.worker_choice.set(first)
+            self.worker_path.set(str(self.available_workers[first]))
+
+        self.worker_combo.bind(
+            "<<ComboboxSelected>>",
+            self.on_worker_selected
+        )
+
+        ttk.Button(
+            frame,
+            text="Browse...",
+            command=self.browse_worker,
+        ).grid(row=0, column=2, padx=5)
+
+        self.worker_status = ttk.Label(frame)
+        self.worker_status.grid(row=1, column=1, sticky="w", pady=(0, 8))
+
+        self.validate_worker()
+
+        ttk.Label(frame, text="Metrics Argument:").grid(
+            row=2,
+            column=0,
+            sticky="w",
+        )
+
         self.metrics_entry = ttk.Entry(frame, width=40)
         self.metrics_entry.insert(0, "--metrics-out")
-        self.metrics_entry.grid(row=1, column=1, pady=2)
-        
-        ttk.Label(frame, text="Timeout (seconds):").grid(row=2, column=0, sticky="w")
+        self.metrics_entry.grid(
+            row=2,
+            column=1,
+            columnspan=2,
+            sticky="ew",
+            pady=2,
+        )
+
+        ttk.Label(frame, text="Timeout (seconds):").grid(
+            row=3,
+            column=0,
+            sticky="w",
+        )
+
         self.timeout_entry = ttk.Entry(frame, width=40)
         self.timeout_entry.insert(0, "120.0")
-        self.timeout_entry.grid(row=2, column=1, pady=2)
+        self.timeout_entry.grid(
+            row=3,
+            column=1,
+            columnspan=2,
+            sticky="ew",
+            pady=2,
+        )
+
+        frame.columnconfigure(1, weight=1)
+
+    def on_worker_selected(self, event=None):
+        selection = self.worker_choice.get()
+
+        if selection == "Browse...":
+            self.browse_worker()
+            return
+
+        self.worker_path.set(str(self.available_workers[selection]))
+        self.validate_worker()
+    
+    # def build_worker_section(self):
+    #     frame = ttk.LabelFrame(self.scrollable_frame, text="Worker Configuration", padding=10)
+    #     frame.pack(fill="x", pady=5)
+        
+    #     ttk.Label(frame, text="Worker file path").grid(row=0, column=0, sticky="w")
+    #     self.cmd_entry = ttk.Entry(frame, width=40)
+    #     self.cmd_entry.insert(
+    #         0,
+    #         "iris_worker.py"
+    #     )
+    #     self.cmd_entry.grid(row=0, column=1, pady=2)
+        
+    #     ttk.Label(frame, text="Metrics Argument:").grid(row=1, column=0, sticky="w")
+    #     self.metrics_entry = ttk.Entry(frame, width=40)
+    #     self.metrics_entry.insert(0, "--metrics-out")
+    #     self.metrics_entry.grid(row=1, column=1, pady=2)
+        
+    #     ttk.Label(frame, text="Timeout (seconds):").grid(row=2, column=0, sticky="w")
+    #     self.timeout_entry = ttk.Entry(frame, width=40)
+    #     self.timeout_entry.insert(0, "120.0")
+    #     self.timeout_entry.grid(row=2, column=1, pady=2)
+
+    def discover_workers(self):
+        """Find all worker scripts under the examples directory."""
+
+        examples_dir = Path(__file__).parent / "examples"
+
+        workers = {}
+
+        if examples_dir.exists():
+            for worker in examples_dir.rglob("*_worker.py"):
+                workers[worker.name] = worker
+
+        return workers
 
     def build_parameters_section(self):
         self.param_frame = ttk.LabelFrame(self.scrollable_frame, text="Optimization Parameters", padding=10)
@@ -299,17 +425,25 @@ class ConfigApp:
         self.filename_entry.insert(0, "config.json")
         self.filename_entry.pack(side="left", padx=5)
 
+        # Progress bar (hidden until optimization starts)
+        self.progress = ttk.Progressbar(
+            btn_frame,
+            mode="indeterminate",
+            length=400,
+        )
+
+        self.progress.pack(fill="x", pady=(0, 10))
+        self.progress.stop()
+
         # Actions arrangement
         actions_frame = ttk.Frame(btn_frame)
         actions_frame.pack(fill="x", pady=5)
+
+        self.status_label = ttk.Label(btn_frame, text="Ready")
+        self.status_label.pack(anchor="w")
         
         preview_btn = ttk.Button(actions_frame, text="Preview JSON", command=self.generate_json)
         preview_btn.pack(side="left", expand=True, fill="x", padx=2)
-
-        # Allows user to save a copy of the JSON file to their local machine. 
-        
-        # save_btn = ttk.Button(actions_frame, text="Save Json File", command=self.save_json_to_folder)
-        # save_btn.pack(side="left", expand=True, fill="x", padx=2)
 
         self.stop_btn = ttk.Button(actions_frame, text="Stop", command=self.stop_optimizer, state="disabled")
         self.stop_btn.pack(side="left", expand=True, fill="x", padx=2)
@@ -446,7 +580,7 @@ class ConfigApp:
 
     def run_loop(self):
         """Save the configuration and launch the optimizer."""
-        
+
         if not self.validate_worker():
             messagebox.showerror(
                 "Invalid Worker",
@@ -498,6 +632,10 @@ class ConfigApp:
             # Disable btn once config is built
             self.go_btn.config(state="disabled")
             self.stop_btn.config(state="normal")
+
+            # Starts the progress bar
+            self.status_label.config(text="Running optimization...")
+            self.progress.start(10)
 
             # Launch optimizer
             self.worker_thread = threading.Thread(
@@ -554,6 +692,8 @@ class ConfigApp:
     def optimizer_finished(self, output_dir):
 
         """Display a summary when the optimizer finishes."""
+        self.progress.stop()
+        self.status_label.config(text="Optimization complete.")
 
         self.go_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
@@ -605,6 +745,9 @@ class ConfigApp:
         self.go_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
 
+        self.progress.stop()
+        self.status_label.config(text="Optimization stopped.")
+
         window = tk.Toplevel(self.root)
         window.title("Optimization Stopped")
         window.iconphoto(False, self.app_icon)
@@ -638,6 +781,9 @@ class ConfigApp:
     def optimizer_failed(self, error):
         self.go_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
+
+        self.progress.stop()
+        self.status_label.config(text="Optimization failed.")
 
         messagebox.showerror(
             "Optimizer Error",
