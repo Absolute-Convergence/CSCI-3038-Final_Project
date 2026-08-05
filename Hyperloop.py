@@ -50,6 +50,7 @@ import subprocess
 import sys
 import threading
 import json
+import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from black_box_optimizer.application import initialize_application
@@ -96,7 +97,7 @@ class ConfigApp:
     def __init__(self, root):
         self.root = root
         self.root.title("HyperLoop")
-        self.root.geometry("620x750")
+        self.root.geometry("620x775")
         self.app_icon = set_icon(os.path.join("assets", "img", "HyperLoop.png"))
         if self.app_icon:
             self.root.iconphoto(False, self.app_icon)
@@ -426,22 +427,15 @@ class ConfigApp:
         self.filename_entry.insert(0, "config.json")
         self.filename_entry.pack(side="left", padx=5)
 
-        # Progress bar (hidden until optimization starts)
-        self.progress = ttk.Progressbar(
-            btn_frame,
-            mode="indeterminate",
-            length=400,
-        )
-
-        self.progress.pack(fill="x", pady=(0, 10))
-        self.progress.stop()
-
         # Actions arrangement
         actions_frame = ttk.Frame(btn_frame)
         actions_frame.pack(fill="x", pady=5)
 
         self.status_label = ttk.Label(btn_frame, text="Ready")
         self.status_label.pack(anchor="w")
+
+        self.trials_label = ttk.Label(btn_frame, text="")
+        self.trials_label.pack(anchor="w")
         
         preview_btn = ttk.Button(actions_frame, text="Preview JSON", command=self.generate_json)
         preview_btn.pack(side="left", expand=True, fill="x", padx=2)
@@ -452,6 +446,28 @@ class ConfigApp:
         self.go_btn = ttk.Button(actions_frame, text="Do the thing", command=self.run_loop)
         self.go_btn.pack(side="left", expand=True, fill="x", padx=2)
 
+
+    def update_trial_counter(self):
+        if not hasattr(self, "_history_file"):
+            matches = list(self.last_output_dir.rglob("history.csv"))
+            if matches:
+                self._history_file = matches[0]
+
+        if hasattr(self, "_history_file"):
+            try:
+                df = pd.read_csv(self._history_file)
+
+                completed = len(df)
+                max_trials = int(self.max_trials_entry.get())
+
+                self.trials_label.config(
+                    text=f"Trials completed: {completed} / {max_trials}"
+                )
+            except Exception:
+                pass
+
+        if self.worker_thread.is_alive():
+            self.root.after(1000, self.update_trial_counter)
         
     def build_config_dict(self):
         """Build the optimizer configuration dictionary."""
@@ -589,6 +605,9 @@ class ConfigApp:
             )
             return
         
+        if hasattr(self, "_history_file"):
+            del self._history_file
+
         self.stop_requested.clear()
 
         try:
@@ -636,7 +655,6 @@ class ConfigApp:
 
             # Starts the progress bar
             self.status_label.config(text="Running optimization...")
-            self.progress.start(10)
 
             # Launch optimizer
             self.worker_thread = threading.Thread(
@@ -647,11 +665,9 @@ class ConfigApp:
 
             self.worker_thread.start()
 
-            # messagebox.showinfo(
-            #     "Optimizer Started",
-            #     f"Configuration saved to:\n{config_path}\n\n"
-            #     f"Output directory:\n{output_dir}"
-            # )
+            self.last_output_dir = output_dir
+            self.update_trial_counter()
+
 
         except Exception as e:
             messagebox.showerror("Error", str(e))
@@ -693,8 +709,8 @@ class ConfigApp:
     def optimizer_finished(self, output_dir):
 
         """Display a summary when the optimizer finishes."""
-        self.progress.stop()
         self.status_label.config(text="Optimization complete.")
+        self.trials_label.config(text="")
 
         self.go_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
@@ -746,8 +762,8 @@ class ConfigApp:
         self.go_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
 
-        self.progress.stop()
         self.status_label.config(text="Optimization stopped.")
+        self.trials_label.config(text="")
 
         window = tk.Toplevel(self.root)
         window.title("Optimization Stopped")
@@ -783,8 +799,8 @@ class ConfigApp:
         self.go_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
 
-        self.progress.stop()
         self.status_label.config(text="Optimization failed.")
+        self.trials_label.config(text="")
 
         messagebox.showerror(
             "Optimizer Error",
