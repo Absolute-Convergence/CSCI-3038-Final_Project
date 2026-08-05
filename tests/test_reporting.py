@@ -8,7 +8,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from black_box_optimizer.models import (
     AlgorithmSpec,
@@ -23,7 +23,11 @@ from black_box_optimizer.models import (
 )
 from black_box_optimizer.persistence import create_run_directory
 from black_box_optimizer.records import TrialRecord
-from black_box_optimizer.reporting import Reporter, ReportingError
+from black_box_optimizer.reporting import (
+    Reporter,
+    ReportingError,
+    _label_extreme_points,
+)
 from black_box_optimizer.results import build_optimization_result
 
 
@@ -276,6 +280,84 @@ class ReporterTests(unittest.TestCase):
     def test_write_rejects_a_non_optimization_result(self) -> None:
         with self.assertRaisesRegex(TypeError, "OptimizationResult"):
             self.reporter.write("not a result")
+
+
+def make_point_record(
+    trial_id: int, *, x: float, y: float, x_name: str, y_name: str
+) -> TrialRecord:
+    return TrialRecord(
+        trial_id=trial_id,
+        parameters={},
+        metrics={x_name: x, y_name: y},
+        execution_status="completed",
+        metrics_status="valid",
+        runtime_seconds=0.1,
+        exit_code=0,
+        timed_out=False,
+    )
+
+
+class LabelExtremePointsTests(unittest.TestCase):
+    x_objective = Objective("distance", Direction.MAXIMIZE)
+    y_objective = Objective("accuracy", Direction.MINIMIZE)
+
+    def label_calls(self, records: tuple[TrialRecord, ...]) -> list[str]:
+        axes = Mock()
+        _label_extreme_points(
+            axes, records, self.x_objective, self.y_objective
+        )
+        return [call.args[0] for call in axes.annotate.call_args_list]
+
+    def make_record(self, trial_id: int, *, x: float, y: float) -> TrialRecord:
+        return make_point_record(
+            trial_id, x=x, y=y, x_name="distance", y_name="accuracy"
+        )
+
+    def test_labels_the_best_trial_per_axis_by_direction(self) -> None:
+        records = (
+            self.make_record(1, x=10.0, y=0.5),
+            self.make_record(2, x=30.0, y=0.9),  # best (max) distance
+            self.make_record(3, x=20.0, y=0.1),  # best (min) accuracy
+        )
+
+        labels = self.label_calls(records)
+
+        self.assertEqual(sorted(labels), ["trial 2", "trial 3"])
+
+    def test_a_tie_on_one_axis_deterministically_picks_the_first_record(
+        self,
+    ) -> None:
+        # Both records tie for the best (max) distance, but trial 6 is
+        # also the legitimately best (min) accuracy -- so the two axis
+        # labels must be checked independently, in call order (x, y),
+        # rather than by membership: "trial 6" belongs in the output,
+        # just as the *second* (y-axis) label, not the first.
+        records = (
+            self.make_record(5, x=30.0, y=0.9),
+            self.make_record(6, x=30.0, y=0.2),
+        )
+
+        axes = Mock()
+        _label_extreme_points(
+            axes, records, self.x_objective, self.y_objective
+        )
+        x_label, y_label = (
+            call.args[0] for call in axes.annotate.call_args_list
+        )
+
+        # Python's max() keeps the first-encountered item on a tie, so
+        # trial 5 -- not trial 6 -- must win the x-axis (distance) label.
+        self.assertEqual(x_label, "trial 5")
+        self.assertEqual(y_label, "trial 6")
+
+    def test_a_single_record_front_labels_the_same_point_on_both_axes(
+        self,
+    ) -> None:
+        records = (self.make_record(9, x=15.0, y=0.5),)
+
+        labels = self.label_calls(records)
+
+        self.assertEqual(labels, ["trial 9", "trial 9"])
 
 
 if __name__ == "__main__":

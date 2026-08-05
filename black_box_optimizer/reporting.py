@@ -7,6 +7,7 @@ import io
 import json
 import os
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
 
@@ -14,11 +15,14 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from black_box_optimizer.models import (
+    Direction,
+    Objective,
     ParameterKind,
     ProjectConfiguration,
 )
 from black_box_optimizer.pareto import is_eligible
 from black_box_optimizer.persistence import RunDirectory
+from black_box_optimizer.records import TrialRecord
 from black_box_optimizer.results import OptimizationResult
 
 
@@ -185,6 +189,45 @@ def _summary(
     return "\n".join(lines) + "\n"
 
 
+def _label_extreme_points(
+    axes,
+    pareto_records: Sequence[TrialRecord],
+    x_objective: Objective,
+    y_objective: Objective,
+) -> None:
+    """Label the best-per-objective trial on the Pareto front with its
+    trial_id, instead of every point -- a front can easily have dozens
+    of points (we've seen 50-70 in real runs), where labeling all of
+    them would just be visual noise. These are also the same extreme
+    values the CLI's own "Best <objective>" summary already reports, so
+    the chart stays consistent with what the terminal already told the
+    user.
+    """
+    for objective, axis in ((x_objective, "x"), (y_objective, "y")):
+        best = (
+            max
+            if objective.direction == Direction.MAXIMIZE
+            else min
+        )
+        best_record = best(
+            pareto_records,
+            key=lambda record: record.metrics[objective.metric_name],
+        )
+        point = (
+            best_record.metrics[x_objective.metric_name],
+            best_record.metrics[y_objective.metric_name],
+        )
+        offset = (6, 6) if axis == "x" else (6, -10)
+        axes.annotate(
+            f"trial {best_record.trial_id}",
+            point,
+            textcoords="offset points",
+            xytext=offset,
+            fontsize=8,
+            color="#1565c0",
+        )
+
+
 def _pareto_plot(
     result: OptimizationResult,
     configuration: ProjectConfiguration,
@@ -235,6 +278,9 @@ def _pareto_plot(
             ],
             color="#1565c0",
             label="Pareto front",
+        )
+        _label_extreme_points(
+            axes, result.pareto_front.records, x_objective, y_objective
         )
     if not eligible:
         axes.text(

@@ -9,7 +9,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from black_box_optimizer.cli import _build_parser, _ProgressReporter, main
+from black_box_optimizer.cli import (
+    _build_parser,
+    _print_best_summary,
+    _ProgressReporter,
+    main,
+)
 from black_box_optimizer.config_loader import ConfigurationError
 from black_box_optimizer.models import (
     Direction,
@@ -48,6 +53,7 @@ def make_session(status: str, termination_reason: str):
         termination_reason=termination_reason,
         attempted_count=2,
         pareto_count=1,
+        pareto_front=SimpleNamespace(records=()),
     )
     configuration = SimpleNamespace(
         stop_policy=SimpleNamespace(max_trials=2),
@@ -193,43 +199,103 @@ class ProgressReporterTests(unittest.TestCase):
             ),
         )
 
-    def test_tracks_best_value_per_objective_by_direction(self) -> None:
-        reporter = _ProgressReporter()
-        reporter.set_target(3, self.make_contract())
+    def test_best_summary_reports_the_extreme_per_objective_by_direction(
+        self,
+    ) -> None:
+        pareto_records = (
+            make_record(0, metrics={"accuracy": 0.5, "loss": 0.5}),
+            make_record(1, metrics={"accuracy": 0.9, "loss": 0.2}),
+            make_record(2, metrics={"accuracy": 0.3, "loss": 0.8}),
+        )
+        result = SimpleNamespace(
+            pareto_front=SimpleNamespace(records=pareto_records)
+        )
 
         stdout = io.StringIO()
         with redirect_stdout(stdout):
-            reporter.on_trial_complete(
-                make_record(0, metrics={"accuracy": 0.5, "loss": 0.5})
-            )
-            reporter.on_trial_complete(
-                make_record(1, metrics={"accuracy": 0.9, "loss": 0.2})
-            )
-            reporter.on_trial_complete(
-                make_record(2, metrics={"accuracy": 0.3, "loss": 0.8})
-            )
-            reporter.print_best_summary()
+            _print_best_summary(result, self.make_contract())
 
         output = stdout.getvalue()
         self.assertIn("Best accuracy: 0.9000 (trial 1)", output)
         self.assertIn("Best loss: 0.2000 (trial 1)", output)
 
-    def test_a_strict_tie_does_not_overwrite_the_first_best(self) -> None:
-        reporter = _ProgressReporter()
-        reporter.set_target(2, self.make_contract())
+    def test_best_summary_never_reports_a_trial_outside_the_pareto_front(
+        self,
+    ) -> None:
+        # Regression test: a trial tied for the best value on one
+        # objective can still be dominated overall if another trial with
+        # the same value is strictly better on a different objective.
+        # The old implementation tracked "best per objective" using each
+        # trial in isolation as it completed, so it could report a
+        # dominated trial as "best" -- reproduced for real this session
+        # with the Paper Airplane example (two trials tied on distance,
+        # one strictly worse on accuracy; the dominated one got reported
+        # as "best distance"). The fix is to only ever look at records
+        # that are actually still on the final Pareto front.
+        dominated_trial = make_record(
+            14, metrics={"accuracy": 0.9, "loss": 0.9}
+        )
+        dominating_trial = make_record(
+            137, metrics={"accuracy": 0.9, "loss": 0.2}
+        )
+        # dominated_trial is intentionally excluded from pareto_front,
+        # the same way build_pareto_front() would exclude it for real.
+        result = SimpleNamespace(
+            pareto_front=SimpleNamespace(records=(dominating_trial,))
+        )
 
         stdout = io.StringIO()
         with redirect_stdout(stdout):
-            reporter.on_trial_complete(
-                make_record(0, metrics={"accuracy": 0.5, "loss": 0.5})
-            )
-            reporter.on_trial_complete(
-                make_record(1, metrics={"accuracy": 0.5, "loss": 0.5})
-            )
-            reporter.print_best_summary()
+            _print_best_summary(result, self.make_contract())
 
-        self.assertIn("trial 0", stdout.getvalue())
-        self.assertNotIn("trial 1", stdout.getvalue())
+        output = stdout.getvalue()
+        self.assertIn("trial 137", output)
+        self.assertNotIn("trial 14", output)
+
+    def test_best_summary_with_a_single_pareto_trial(self) -> None:
+        only_record = make_record(3, metrics={"accuracy": 0.6, "loss": 0.4})
+        result = SimpleNamespace(
+            pareto_front=SimpleNamespace(records=(only_record,))
+        )
+
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            _print_best_summary(result, self.make_contract())
+
+        output = stdout.getvalue()
+        self.assertIn("Best accuracy: 0.6000 (trial 3)", output)
+        self.assertIn("Best loss: 0.4000 (trial 3)", output)
+
+    def test_a_tie_deterministically_picks_the_first_matching_record(
+        self,
+    ) -> None:
+        # Both records tie for the best (max) accuracy; Python's max()
+        # keeps the first-encountered item on a tie, so trial 10 -- not
+        # trial 11 -- must be reported, and consistently so run to run.
+        tied_first = make_record(10, metrics={"accuracy": 0.9, "loss": 0.5})
+        tied_second = make_record(11, metrics={"accuracy": 0.9, "loss": 0.1})
+        result = SimpleNamespace(
+            pareto_front=SimpleNamespace(records=(tied_first, tied_second))
+        )
+
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            _print_best_summary(result, self.make_contract())
+
+        output = stdout.getvalue()
+        self.assertIn("Best accuracy: 0.9000 (trial 10)", output)
+        self.assertIn("Best loss: 0.1000 (trial 11)", output)
+
+    def test_best_summary_prints_nothing_when_pareto_front_is_empty(
+        self,
+    ) -> None:
+        result = SimpleNamespace(pareto_front=SimpleNamespace(records=()))
+
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            _print_best_summary(result, self.make_contract())
+
+        self.assertEqual(stdout.getvalue(), "")
 
     def test_failure_reason_categorizes_execution_failure(self) -> None:
         reporter = _ProgressReporter()
