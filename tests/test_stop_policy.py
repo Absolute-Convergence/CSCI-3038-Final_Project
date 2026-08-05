@@ -5,7 +5,14 @@ from __future__ import annotations
 import unittest
 from dataclasses import FrozenInstanceError
 
-from black_box_optimizer.models import StopPolicy
+from black_box_optimizer.models import (
+    Direction,
+    Objective,
+    OptimizationContract,
+    ParameterDefinition,
+    ParameterKind,
+    StopPolicy,
+)
 from black_box_optimizer.records import TrialRecord
 from black_box_optimizer.stop_policy import StopDecision, StopPolicyEvaluator
 
@@ -15,12 +22,41 @@ def make_trial_record(trial_id: int) -> TrialRecord:
     return TrialRecord(
         trial_id=trial_id,
         parameters={"learning_rate": 0.01},
-        metrics={"accuracy": 0.9},
+        metrics={"accuracy": 0.9, "loss": 0.1},
         execution_status="completed",
         metrics_status="valid",
         runtime_seconds=1.0,
         exit_code=0,
         timed_out=False,
+    )
+
+
+def make_failed_trial_record(trial_id: int) -> TrialRecord:
+    """Build a TrialRecord that is_eligible() will reject."""
+    return TrialRecord(
+        trial_id=trial_id,
+        parameters={"learning_rate": 0.01},
+        metrics={},
+        execution_status="process_failed",
+        metrics_status="missing",
+        runtime_seconds=0.1,
+        exit_code=2,
+        timed_out=False,
+        error_message="Worker exited with code 2",
+    )
+
+
+def make_contract() -> OptimizationContract:
+    return OptimizationContract(
+        parameters=(
+            ParameterDefinition(
+                "learning_rate", ParameterKind.FLOAT, 0.0001, 0.1
+            ),
+        ),
+        objectives=(
+            Objective("accuracy", Direction.MAXIMIZE),
+            Objective("loss", Direction.MINIMIZE),
+        ),
     )
 
 
@@ -114,6 +150,81 @@ class StopPolicyEvaluatorTests(unittest.TestCase):
         decision = self.evaluator.before_trial(history)
 
         self.assertFalse(decision.continue_execution)
+
+
+class ExcessiveFailuresTests(unittest.TestCase):
+    """Verify the repeated-failure early-stop check (contract supplied)."""
+
+    def setUp(self) -> None:
+        self.evaluator = StopPolicyEvaluator(
+            StopPolicy(max_trials=150), make_contract()
+        )
+
+    def test_no_contract_never_triggers_regardless_of_failure_rate(
+        self,
+    ) -> None:
+        # Backward-compat: every pre-existing caller constructs
+        # StopPolicyEvaluator with just a StopPolicy, and must keep
+        # behaving exactly as before -- max_trials only, no failure check.
+        evaluator = StopPolicyEvaluator(StopPolicy(max_trials=150))
+        history = [make_failed_trial_record(i) for i in range(10)]
+
+        decision = evaluator.before_trial(history)
+
+        self.assertTrue(decision.continue_execution)
+
+    def test_five_consecutive_failures_does_not_trigger_yet(self) -> None:
+        # Hand-verified: binomial_tail_probability(5, 5, 0.3) = 0.00243,
+        # not below the calibrated alpha=0.001 threshold yet.
+        history = [make_failed_trial_record(i) for i in range(5)]
+
+        decision = self.evaluator.after_trial(history)
+
+        self.assertTrue(decision.continue_execution)
+
+    def test_six_consecutive_failures_triggers(self) -> None:
+        # Hand-verified: binomial_tail_probability(6, 6, 0.3) = 0.000729,
+        # below alpha=0.001 -- the first n where 100% failure triggers.
+        history = [make_failed_trial_record(i) for i in range(6)]
+
+        decision = self.evaluator.after_trial(history)
+
+        self.assertFalse(decision.continue_execution)
+        self.assertEqual(decision.termination_reason, "excessive_failures")
+        self.assertIn("6 of 6 trials failed", decision.message)
+
+    def test_all_successful_trials_never_triggers(self) -> None:
+        history = [make_trial_record(i) for i in range(140)]
+
+        decision = self.evaluator.after_trial(history)
+
+        self.assertTrue(decision.continue_execution)
+
+    def test_a_healthy_minority_of_failures_does_not_trigger(self) -> None:
+        # 10% failure rate, well under the 30% acceptable baseline --
+        # should never look statistically excessive.
+        history = [make_trial_record(i) for i in range(90)] + [
+            make_failed_trial_record(90 + i) for i in range(10)
+        ]
+
+        decision = self.evaluator.after_trial(history)
+
+        self.assertTrue(decision.continue_execution)
+
+    def test_reaching_max_trials_still_reports_maximum_trials_first(
+        self,
+    ) -> None:
+        # If both conditions are true at once, the pre-existing
+        # max_trials path takes precedence -- it's checked first and the
+        # run was going to stop either way.
+        evaluator = StopPolicyEvaluator(
+            StopPolicy(max_trials=6), make_contract()
+        )
+        history = [make_failed_trial_record(i) for i in range(6)]
+
+        decision = evaluator.after_trial(history)
+
+        self.assertEqual(decision.termination_reason, "maximum_trials")
 
 
 if __name__ == "__main__":
