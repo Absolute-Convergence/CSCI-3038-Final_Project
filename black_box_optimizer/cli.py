@@ -13,21 +13,20 @@ from black_box_optimizer.models import Direction, OptimizationContract
 from black_box_optimizer.pareto import is_eligible
 from black_box_optimizer.records import TrialRecord
 from black_box_optimizer.reporting import ReportingError
+from black_box_optimizer.results import OptimizationResult
 
 
 # EMILY ADDITION FOR BEAUTIFICATION PURPOSES
 #
 # A real run against a real worker can take minutes with no output at all,
 # which looks indistinguishable from a hang. This renders a single
-# self-overwriting progress line as trials complete, and remembers the best
-# value seen per objective so the final summary can report it.
+# self-overwriting progress line as trials complete.
 class _ProgressReporter:
     _BAR_WIDTH = 24
 
     def __init__(self) -> None:
         self._max_trials: int | None = None
         self._contract: OptimizationContract | None = None
-        self._best: dict[str, tuple[float, int]] = {}
         self._failure_counts: dict[str, int] = {}
         self._failure_examples: dict[str, str] = {}
         self._started_at = monotonic()
@@ -44,21 +43,7 @@ class _ProgressReporter:
         eligible = self._contract is not None and is_eligible(
             record, self._contract
         )
-        if eligible:
-            for objective in self._contract.objectives:
-                value = record.metrics[objective.metric_name]
-                current = self._best.get(objective.metric_name)
-                is_better = current is None or (
-                    value > current[0]
-                    if objective.direction == Direction.MAXIMIZE
-                    else value < current[0]
-                )
-                if is_better:
-                    self._best[objective.metric_name] = (
-                        value,
-                        record.trial_id,
-                    )
-        else:
+        if not eligible:
             reason = self._failure_reason(record)
             self._failure_counts[reason] = (
                 self._failure_counts.get(reason, 0) + 1
@@ -102,19 +87,6 @@ class _ProgressReporter:
             sys.stdout.write("\n")
             sys.stdout.flush()
 
-    def print_best_summary(self) -> None:
-        if self._contract is None:
-            return
-        for objective in self._contract.objectives:
-            entry = self._best.get(objective.metric_name)
-            if entry is None:
-                continue
-            value, trial_id = entry
-            print(
-                f"Best {objective.metric_name}: {value:.4f} "
-                f"(trial {trial_id})"
-            )
-
     def print_failure_summary(self) -> None:
         total_failed = sum(self._failure_counts.values())
         if total_failed == 0:
@@ -125,6 +97,36 @@ class _ProgressReporter:
             detail = f" -- e.g. {example}" if example else ""
             print(f"  {reason}: {count}{detail}")
         print("See history.csv in the run directory for full details.")
+
+
+# EMILY ADDITION FOR BEAUTIFICATION PURPOSES
+#
+# Deliberately not tracked incrementally during the run the way progress
+# and failures are. A per-trial "best so far" tracker can only compare
+# one objective at a time, so it can end up reporting a trial that a
+# *later* trial actually dominates (identical-or-better on every other
+# objective too) as if it were undominated -- the run's real Pareto
+# front is the only thing that can answer "is this genuinely one of the
+# best trade-offs," so this is computed once, after the run, straight
+# from result.pareto_front -- the same authoritative source
+# reporting.py's chart already draws its own best-point labels from.
+def _print_best_summary(
+    result: OptimizationResult, contract: OptimizationContract
+) -> None:
+    pareto_records = result.pareto_front.records
+    if not pareto_records:
+        return
+    for objective in contract.objectives:
+        best = max if objective.direction == Direction.MAXIMIZE else min
+        best_record = best(
+            pareto_records,
+            key=lambda record: record.metrics[objective.metric_name],
+        )
+        value = best_record.metrics[objective.metric_name]
+        print(
+            f"Best {objective.metric_name}: {value:.4f} "
+            f"(trial {best_record.trial_id})"
+        )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -189,7 +191,7 @@ def _run(argv: Sequence[str] | None, *, prog: str) -> int:
     print(f"Trials attempted: {result.attempted_count}")
     print(f"Pareto trials: {result.pareto_count}")
     progress.print_failure_summary()
-    progress.print_best_summary()
+    _print_best_summary(result, session.configuration.optimization)
 
     if result.status == "cancelled":
         return 130
