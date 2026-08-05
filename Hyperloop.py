@@ -295,7 +295,7 @@ class ConfigApp:
     def build_config_dict(self):
         """Build the optimizer configuration dictionary."""
 
-        cmd = ["python", os.path.join("examples", "iris_torch", self.cmd_entry.get().strip())]
+        cmd = ["python", os.path.join("examples", "paper_airplane", self.cmd_entry.get().strip())]
         timeout = float(self.timeout_entry.get())
 
         params_out = []
