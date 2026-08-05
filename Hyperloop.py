@@ -78,6 +78,7 @@ def get_asset_path(relative_path):
     """Get absolute path to resource relative to this script file"""
     base_path = os.path.dirname(os.path.realpath(__file__))
 
+    
     return os.path.normpath(os.path.join(base_path, relative_path))
 
 
