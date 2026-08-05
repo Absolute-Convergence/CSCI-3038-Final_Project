@@ -204,8 +204,7 @@ class ConfigurationLoaderTests(unittest.TestCase):
         self.assertEqual(
             configuration.worker.command,
             (
-                "py",
-                "-3.13",
+                "python3",
                 str((path.parent / "iris_worker.py").resolve()),
             ),
         )
