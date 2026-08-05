@@ -122,6 +122,41 @@ class ConfigurationLoaderTests(unittest.TestCase):
             "algorithm: seed cannot be negative", caught.exception.issues
         )
 
+    def test_seed_is_optional_and_a_fresh_one_is_generated_when_omitted(
+        self,
+    ) -> None:
+        document = self.valid_document()
+        document["algorithm"] = {"name": "random_search"}
+
+        configuration = load_configuration(self.write_document(document))
+
+        self.assertIsInstance(configuration.algorithm.seed, int)
+        self.assertFalse(isinstance(configuration.algorithm.seed, bool))
+        self.assertGreaterEqual(configuration.algorithm.seed, 0)
+
+    def test_omitted_seed_is_not_the_same_value_every_time(self) -> None:
+        # Not a strict randomness proof, just a sanity check that this
+        # isn't silently a fixed constant pretending to be random.
+        document = self.valid_document()
+        document["algorithm"] = {"name": "random_search"}
+
+        seeds = {
+            load_configuration(
+                self.write_document(document, name=f"config_{i}.json")
+            ).algorithm.seed
+            for i in range(20)
+        }
+
+        self.assertGreater(len(seeds), 1)
+
+    def test_explicit_seed_is_still_honored_when_supplied(self) -> None:
+        document = self.valid_document()
+        document["algorithm"] = {"name": "random_search", "seed": 8472}
+
+        configuration = load_configuration(self.write_document(document))
+
+        self.assertEqual(configuration.algorithm.seed, 8472)
+
     def test_preserves_parameter_and_objective_order(self) -> None:
         configuration = load_configuration(
             self.write_document(self.valid_document())
@@ -577,17 +612,20 @@ class ConfigurationLoaderTests(unittest.TestCase):
     def test_rejects_algorithm_section_with_missing_or_extra_fields(
         self,
     ) -> None:
+        # seed is intentionally optional (a fresh one is generated when
+        # omitted -- see the tests above), so this exercises the field
+        # that's actually still required (name) alongside an extra one.
         document = self.valid_document()
         algorithm = document["algorithm"]
         assert isinstance(algorithm, dict)
-        del algorithm["seed"]
+        del algorithm["name"]
         algorithm["notes"] = "unexpected"
 
         with self.assertRaises(ConfigurationError) as caught:
             load_configuration(self.write_document(document))
 
         self.assertIn(
-            "algorithm.seed: required field is missing",
+            "algorithm.name: required field is missing",
             caught.exception.issues,
         )
         self.assertIn(

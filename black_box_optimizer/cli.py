@@ -180,6 +180,10 @@ def _run(argv: Sequence[str] | None, *, prog: str) -> int:
 
     progress.finish_line()
     print(f"Run directory: {session.run_directory.path}")
+    print(
+        f"Seed: {session.configuration.algorithm.seed} "
+        "(supply this in algorithm.seed to reproduce this exact run)"
+    )
     print(f"Status: {result.status}")
     print(f"Termination reason: {result.termination_reason}")
     print(f"Trials attempted: {result.attempted_count}")

@@ -52,6 +52,7 @@ def make_session(status: str, termination_reason: str):
     configuration = SimpleNamespace(
         stop_policy=SimpleNamespace(max_trials=2),
         optimization=SimpleNamespace(objectives=()),
+        algorithm=SimpleNamespace(seed=42),
     )
     return SimpleNamespace(
         configuration=configuration,
