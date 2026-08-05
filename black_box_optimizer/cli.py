@@ -32,6 +32,7 @@ class _ProgressReporter:
         self._failure_examples: dict[str, str] = {}
         self._started_at = monotonic()
         self._printed = False
+        self.completed_count = 0
 
     def set_target(
         self, max_trials: int, contract: OptimizationContract
@@ -65,7 +66,8 @@ class _ProgressReporter:
             if reason not in self._failure_examples and record.error_message:
                 self._failure_examples[reason] = record.error_message
 
-        self._render(record.trial_id + 1)
+        self.completed_count = record.trial_id + 1
+        self._render(self.completed_count)
 
     @staticmethod
     def _failure_reason(record: TrialRecord) -> str:
@@ -154,7 +156,19 @@ def _run(argv: Sequence[str] | None, *, prog: str) -> int:
         result = session.run()
     except KeyboardInterrupt:
         progress.finish_line()
-        print("Optimization cancelled during initialization.", file=sys.stderr)
+        if progress.completed_count:
+            print(
+                f"Optimization cancelled while a trial was in progress. "
+                f"{progress.completed_count} trial(s) completed and were "
+                "safely recorded before the interrupt, but this run's "
+                "final report was not written.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "Optimization cancelled during initialization.",
+                file=sys.stderr,
+            )
         return 130
     except ConfigurationError as error:
         print(error, file=sys.stderr)
