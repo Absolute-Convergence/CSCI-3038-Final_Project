@@ -280,11 +280,8 @@ python3 -m black_box_optimizer path/to/config.json --output-dir runs
 
 From a source checkout, install the core package in editable mode. Install the
 Iris dependency separately only when running that example. `iris_config.json`
-uses Windows' `py` launcher for its worker command; there is currently no
-macOS/Linux example configuration for Iris specifically, so on those
-platforms either edit `worker.command` to `["python3", "iris_worker.py"]`
-yourself or use the Paper Airplane example below instead, which ships a
-config for both platforms already:
+uses Windows' `py` launcher for its worker command; `iris_config_unix.json`
+is the identical configuration for macOS/Linux:
 
 ```powershell
 py -3.13 -m pip install -e .
@@ -298,7 +295,7 @@ py -3.13 -m black_box_optimizer `
 python3 -m pip install -e .
 python3 -m pip install -r requirements-iris.txt
 python3 -m black_box_optimizer \
-  examples/iris_torch/iris_config.json \
+  examples/iris_torch/iris_config_unix.json \
   --output-dir runs
 ```
 
