@@ -9,7 +9,7 @@ from unittest.mock import patch
 try:
     import Hyperloop
 except ModuleNotFoundError as error:
-    if error.name in {"PIL", "tkinter", "_tkinter"}:
+    if error.name in {"PIL", "tkinter", "_tkinter", "pandas"}:
         raise unittest.SkipTest(
             "optional GUI dependencies are not installed"
         ) from error
