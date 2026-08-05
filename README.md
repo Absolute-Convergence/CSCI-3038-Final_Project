@@ -136,8 +136,7 @@ CSCI-3038-Final_Project/
 |   |   `-- compare_search_algorithms.py
 |   `-- paper_airplane/
 |       |-- __init__.py               # package marker
-|       |-- paper_airplane_config.json       # example configuration (Windows)
-|       |-- paper_airplane_config_unix.json  # same example, macOS/Linux worker command
+|       |-- paper_airplane_config.json       # example configuration
 |       `-- paper_airplane_worker.py  # fun demo worker, known-optimal Pareto front
 |-- tests/
 |   |-- test_models.py                # implemented foundation-model tests
@@ -279,23 +278,15 @@ python3 -m black_box_optimizer path/to/config.json --output-dir runs
 ```
 
 From a source checkout, install the core package in editable mode. Install the
-Iris dependency separately only when running that example. `iris_config.json`
-uses Windows' `py` launcher for its worker command; `iris_config_unix.json`
-is the identical configuration for macOS/Linux:
-
-```powershell
-py -3.13 -m pip install -e .
-py -3.13 -m pip install -r requirements-iris.txt
-py -3.13 -m black_box_optimizer `
-  examples\iris_torch\iris_config.json `
-  --output-dir runs
-```
+Iris dependency separately only when running that example. Both
+`iris_config.json` and the Paper Airplane example below use `python3` in
+their worker command, so they run on macOS/Linux as-is:
 
 ```bash
 python3 -m pip install -e .
 python3 -m pip install -r requirements-iris.txt
 python3 -m black_box_optimizer \
-  examples/iris_torch/iris_config_unix.json \
+  examples/iris_torch/iris_config.json \
   --output-dir runs
 ```
 
@@ -303,17 +294,11 @@ The source checkout also includes the Paper Airplane example: a fun,
 near-instant worker (pure arithmetic, no ML training) with a genuine,
 mathematically known-optimal Pareto front, useful for demos or for
 seeing real multi-objective search results in seconds instead of
-minutes. It ships a working config for both platforms already:
-
-```powershell
-py -3.13 -m black_box_optimizer `
-  examples\paper_airplane\paper_airplane_config.json `
-  --output-dir runs
-```
+minutes:
 
 ```bash
 python3 -m black_box_optimizer \
-  examples/paper_airplane/paper_airplane_config_unix.json \
+  examples/paper_airplane/paper_airplane_config.json \
   --output-dir runs
 ```
 
