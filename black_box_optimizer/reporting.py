@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import csv
 import io
+import itertools
 import json
+import math
 import os
 import tempfile
 from collections.abc import Sequence
@@ -189,6 +191,19 @@ def _summary(
     return "\n".join(lines) + "\n"
 
 
+# Chart palette -- dataviz skill's validated default instance
+# (references/palette.md), "highlight one, gray the rest" pattern: the
+# Pareto front is the one series that matters, so it gets the vivid,
+# validated categorical hue while every other eligible trial recedes
+# into muted context.
+_SURFACE = "#fcfcfb"
+_GRIDLINE = "#e1e0d9"
+_PRIMARY_INK = "#0b0b0b"
+_SECONDARY_INK = "#52514e"
+_MUTED_INK = "#898781"
+_FRONT_COLOR = "#eb6834"
+
+
 def _label_extreme_points(
     axes,
     pareto_records: Sequence[TrialRecord],
@@ -224,85 +239,182 @@ def _label_extreme_points(
             textcoords="offset points",
             xytext=offset,
             fontsize=8,
-            color="#1565c0",
+            color=_FRONT_COLOR,
+            fontweight="bold",
         )
+
+
+_CHART_TITLE = "Optimization trials and complete Pareto front"
+
+
+def _grid_shape(pair_count: int) -> tuple[int, int]:
+    """Return (rows, columns) for a roughly square subplot grid."""
+    columns = math.ceil(math.sqrt(pair_count))
+    rows = math.ceil(pair_count / columns)
+    return rows, columns
+
+
+def _plot_objective_pair(
+    axes,
+    x_objective: Objective,
+    y_objective: Objective,
+    other_records: Sequence[TrialRecord],
+    pareto_records: Sequence[TrialRecord],
+) -> None:
+    """Draw one x/y projection of the trials onto ``axes``.
+
+    Every objective pair shares this exact drawing logic so a two-
+    objective run and one axes of a many-objective grid look identical.
+    """
+    if other_records:
+        axes.scatter(
+            [
+                record.metrics[x_objective.metric_name]
+                for record in other_records
+            ],
+            [
+                record.metrics[y_objective.metric_name]
+                for record in other_records
+            ],
+            color=_MUTED_INK,
+            alpha=0.55,
+            s=28,
+            linewidths=0,
+            label="eligible trials",
+        )
+    axes.scatter(
+        [
+            record.metrics[x_objective.metric_name]
+            for record in pareto_records
+        ],
+        [
+            record.metrics[y_objective.metric_name]
+            for record in pareto_records
+        ],
+        color=_FRONT_COLOR,
+        s=46,
+        edgecolors=_SURFACE,
+        linewidths=1.0,
+        zorder=3,
+        label="Pareto front",
+    )
+    _label_extreme_points(axes, pareto_records, x_objective, y_objective)
+
+    axes.set_xlabel(
+        f"{x_objective.metric_name} ({x_objective.direction.value})",
+        color=_SECONDARY_INK,
+    )
+    axes.set_ylabel(
+        f"{y_objective.metric_name} ({y_objective.direction.value})",
+        color=_SECONDARY_INK,
+    )
+    axes.set_facecolor(_SURFACE)
+    axes.grid(color=_GRIDLINE, linewidth=0.8)
+    axes.set_axisbelow(True)
+    for spine in axes.spines.values():
+        spine.set_color(_GRIDLINE)
+    axes.tick_params(colors=_SECONDARY_INK)
+
+
+def _empty_pareto_plot() -> bytes:
+    figure = Figure(figsize=(7.0, 5.0), dpi=120, facecolor=_SURFACE)
+    canvas = FigureCanvasAgg(figure)
+    axes = figure.add_subplot(1, 1, 1)
+    axes.set_facecolor(_SURFACE)
+    axes.text(
+        0.5,
+        0.5,
+        "No eligible trials",
+        ha="center",
+        va="center",
+        color=_SECONDARY_INK,
+        transform=axes.transAxes,
+    )
+    axes.set_xticks([])
+    axes.set_yticks([])
+    for spine in axes.spines.values():
+        spine.set_color(_GRIDLINE)
+    axes.set_title(_CHART_TITLE, color=_PRIMARY_INK, fontweight="bold")
+    figure.tight_layout()
+
+    stream = io.BytesIO()
+    canvas.print_png(stream)
+    return stream.getvalue()
 
 
 def _pareto_plot(
     result: OptimizationResult,
     configuration: ProjectConfiguration,
 ) -> bytes:
+    """Chart every pairwise projection of the Pareto front.
+
+    Two objectives need exactly one x/y plot. Three or more need one
+    plot per unique pair (a 4-objective run has 6, a 5-objective run has
+    10) laid out in a grid, since there is no single 2D view that shows
+    a front with more than two dimensions at once.
+    """
     contract = configuration.optimization
-    x_objective, y_objective = contract.objectives[:2]
     eligible = tuple(
         record
         for record in result.history
         if is_eligible(record, contract)
     )
+    if not eligible:
+        return _empty_pareto_plot()
+
     front_ids = {
         record.trial_id for record in result.pareto_front.records
     }
     other_records = tuple(
         record for record in eligible if record.trial_id not in front_ids
     )
+    pairs = tuple(itertools.combinations(contract.objectives, 2))
+    rows, columns = _grid_shape(len(pairs))
+    width = max(7.0, columns * 4.0)
+    height = max(5.0, rows * 3.6)
 
-    figure = Figure(figsize=(7.0, 5.0), dpi=120)
+    figure = Figure(figsize=(width, height), dpi=120, facecolor=_SURFACE)
     canvas = FigureCanvasAgg(figure)
-    axes = figure.add_subplot(1, 1, 1)
-
-    if other_records:
-        other_x = [
-            record.metrics[x_objective.metric_name]
-            for record in other_records
-        ]
-        other_y = [
-            record.metrics[y_objective.metric_name]
-            for record in other_records
-        ]
-        axes.scatter(
-            other_x,
-            other_y,
-            color="#9aa0a6",
-            alpha=0.75,
-            label="eligible trials",
-        )
-    if result.pareto_front.records:
-        axes.scatter(
-            [
-                record.metrics[x_objective.metric_name]
-                for record in result.pareto_front.records
-            ],
-            [
-                record.metrics[y_objective.metric_name]
-                for record in result.pareto_front.records
-            ],
-            color="#1565c0",
-            label="Pareto front",
-        )
-        _label_extreme_points(
-            axes, result.pareto_front.records, x_objective, y_objective
-        )
-    if not eligible:
-        axes.text(
-            0.5,
-            0.5,
-            "No eligible trials",
-            ha="center",
-            va="center",
-            transform=axes.transAxes,
+    for index, (x_objective, y_objective) in enumerate(pairs, start=1):
+        axes = figure.add_subplot(rows, columns, index)
+        _plot_objective_pair(
+            axes,
+            x_objective,
+            y_objective,
+            other_records,
+            result.pareto_front.records,
         )
 
-    axes.set_xlabel(
-        f"{x_objective.metric_name} ({x_objective.direction.value})"
-    )
-    axes.set_ylabel(
-        f"{y_objective.metric_name} ({y_objective.direction.value})"
-    )
-    axes.set_title("Optimization trials and complete Pareto front")
-    axes.grid(alpha=0.2)
-    if eligible:
-        axes.legend()
-    figure.tight_layout()
+    legend_kwargs = {
+        "frameon": True,
+        "facecolor": _SURFACE,
+        "edgecolor": _GRIDLINE,
+        "labelcolor": _SECONDARY_INK,
+    }
+    if len(pairs) == 1:
+        figure.axes[0].set_title(
+            _CHART_TITLE, color=_PRIMARY_INK, fontweight="bold"
+        )
+        figure.axes[0].legend(**legend_kwargs)
+        figure.tight_layout()
+    else:
+        # Title and legend are both centered and stacked, not sharing a
+        # corner -- a figure.legend(loc="upper right") collided with the
+        # suptitle on narrower grids (few pairs -> few columns leaves
+        # little horizontal room to separate them).
+        handles, labels = figure.axes[0].get_legend_handles_labels()
+        figure.suptitle(
+            _CHART_TITLE, y=0.99, color=_PRIMARY_INK, fontweight="bold"
+        )
+        figure.legend(
+            handles,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.94),
+            ncol=2,
+            **legend_kwargs,
+        )
+        figure.tight_layout(rect=(0.0, 0.0, 1.0, 0.86))
 
     stream = io.BytesIO()
     canvas.print_png(stream)
