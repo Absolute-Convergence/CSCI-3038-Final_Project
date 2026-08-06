@@ -246,6 +246,35 @@ Additional implemented surfaces are imported from their owning modules:
 
 See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for reproduced defects in merged code.
 
+## Quick install instructions 
+- TO RUN ON MAC:
+
+git clone https://github.com/Absolute-Convergence/CSCI-3038-Final_Project.git
+cd CSCI-3038-Final_Project
+
+python3 --version
+(Make sure it’s 3.13)
+python3 -m venv .venv
+source .venv/bin/activate
+
+python3 -m pip install --upgrade pip setuptools
+python3 -m pip install -e .
+
+python3 -m black_box_optimizer \
+  examples/paper_airplane/paper_airplane_config.json \
+  --output-dir runs
+(or whatever worker you have)
+
+- TO RUN with GUI on Mac or Windows
+python3 -m venv .venv     (Mac only)
+source .venv/bin/activate (Mac only)
+
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-gui.txt
+
+python Hyperloop.py
+
 ## Install and Run Hyperloop
 
 `worker.command` in a project configuration is the exact command that
