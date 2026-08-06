@@ -83,7 +83,10 @@ def set_icon(relative_img_path):
     """Load and return the application icon."""
 
     try:
+        # Get the complete path to the icon image.
         icon_img_path = get_asset_path(relative_img_path)
+
+        # Open the image and convert it into a Tkinter-compatible format.
         icon_img = Image.open(icon_img_path)
         icon = ImageTk.PhotoImage(icon_img)
         return icon
