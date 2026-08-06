@@ -310,7 +310,7 @@ class ConfigApp:
         self.stop_btn.pack(side="left", expand=True, fill="x", padx=2)
 
         self.go_btn = ttk.Button(
-            actions_frame, text="Do the thing", command=self.run_loop
+        text="Run Optimization"
         )
         self.go_btn.pack(side="left", expand=True, fill="x", padx=2)
 
@@ -694,7 +694,9 @@ class ConfigApp:
             self.stop_btn.config(state="normal")
 
             # Starts the progress bar
-            self.status_label.config(text="Running optimization...")
+            self.status_label.config(
+    text="HyperLoop is searching for the best solutions..."
+)
 
             # Launch optimizer
             self.worker_thread = threading.Thread(
