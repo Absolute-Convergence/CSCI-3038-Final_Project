@@ -794,6 +794,7 @@ class ConfigApp:
             command=window.destroy,
         ).pack(side="right", padx=5)
 
+# Reset the interface and show a message when the user stops the optimization.
     def optimizer_cancelled(self, output_dir):
         self.go_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
