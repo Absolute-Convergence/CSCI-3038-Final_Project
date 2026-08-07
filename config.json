@@ -1,8 +1,8 @@
 {
   "worker": {
     "command": [
-      "C:\\Users\\wanna\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
-      "C:\\dev\\final_proj\\CSCI-3038-Final_Project\\examples\\iris_torch\\iris_worker.py"
+      "/Users/emilytew/Desktop/Projects/CSCI-3038-Final_Project/.venv/bin/python3",
+      "/Users/emilytew/Desktop/Projects/CSCI-3038-Final_Project/examples/iris_torch/iris_worker.py"
     ],
     "metrics_argument": "--metrics-out",
     "timeout_seconds": 120.0

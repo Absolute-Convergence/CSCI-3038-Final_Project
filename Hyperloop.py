@@ -72,6 +72,104 @@ def _open_folder(path):
         )
 
 
+_PAGE = "#fdf1f5"
+_SURFACE = "#fffafc"
+_PRIMARY_INK = "#6b1236"
+_SECONDARY_INK = "#9c4267"
+_MUTED_INK = "#b97b93"
+_GRIDLINE = "#f3c6d9"
+_BUTTON_WASH = "#fbe4ec"
+_BUTTON_WASH_ACTIVE = "#f6c9da"
+_ACCENT = "#c2255c"
+_ACCENT_ACTIVE = "#a51e4d"
+_ACCENT_TEXT = "#ffffff"
+_STATUS_GOOD = "#0ca30c"  # not pinked -- success/failure must stay distinct
+_STATUS_CRITICAL = "#d03b3b"
+_HEADING_FONT = "Helvetica"
+
+_PAPER_AIRPLANE_WORKER = "paper_airplane_worker.py"
+
+_PAPER_AIRPLANE_PARAMETERS = [
+    ("wing_span_cm", "float", "5.0", "20.0"),
+    ("nose_weight_g", "float", "0.0", "5.0"),
+    ("wing_angle_deg", "float", "0.0", "45.0"),
+    ("fold_sharpness", "float", "0.0", "1.0"),
+    ("paper_thickness_gsm", "float", "60.0", "160.0"),
+]
+
+_PAPER_AIRPLANE_OBJECTIVES = [
+    ("flight_distance_m", "maximize"),
+    ("landing_accuracy_pct", "maximize"),
+]
+
+
+def _apply_theme(root):
+    style = ttk.Style(root)
+    try:
+        style.theme_use("clam")
+    except tk.TclError:
+        pass  # fall back to whatever theme this platform ships by default
+
+    root.configure(background=_PAGE)
+
+    style.configure("TFrame", background=_SURFACE)
+    style.configure(
+        "TLabel", background=_SURFACE, foreground=_SECONDARY_INK,
+        font=(_HEADING_FONT, 11),
+    )
+    style.configure(
+        "TLabelframe", background=_SURFACE, bordercolor=_GRIDLINE,
+        relief="solid", borderwidth=1,
+    )
+    style.configure(
+        "TLabelframe.Label", background=_SURFACE, foreground=_PRIMARY_INK,
+        font=(_HEADING_FONT, 10, "bold"),
+    )
+    style.configure(
+        "TButton", background=_BUTTON_WASH, foreground=_PRIMARY_INK,
+        bordercolor=_GRIDLINE, padding=3, font=(_HEADING_FONT, 10),
+    )
+    style.map(
+        "TButton",
+        background=[("active", _BUTTON_WASH_ACTIVE), ("disabled", _SURFACE)],
+        foreground=[("disabled", _MUTED_INK)],
+    )
+    style.configure(
+        "Accent.TButton", background=_ACCENT, foreground=_ACCENT_TEXT,
+        font=(_HEADING_FONT, 10, "bold"), padding=5,
+    )
+    style.map(
+        "Accent.TButton",
+        background=[("active", _ACCENT_ACTIVE), ("disabled", _MUTED_INK)],
+    )
+    style.configure(
+        "TEntry", fieldbackground=_SURFACE, bordercolor=_GRIDLINE,
+        font=(_HEADING_FONT, 11),
+    )
+    style.configure(
+        "TCombobox", fieldbackground=_SURFACE, background=_BUTTON_WASH,
+        arrowcolor=_PRIMARY_INK, bordercolor=_GRIDLINE,
+        font=(_HEADING_FONT, 11),
+    )
+    style.map(
+        "TCombobox",
+        fieldbackground=[("readonly", _SURFACE)],
+        background=[("readonly", _BUTTON_WASH)],
+    )
+    root.option_add("*TCombobox*Listbox.background", _SURFACE)
+    root.option_add("*TCombobox*Listbox.foreground", _PRIMARY_INK)
+    root.option_add("*TCombobox*Listbox.selectBackground", _ACCENT)
+    root.option_add("*TCombobox*Listbox.selectForeground", _ACCENT_TEXT)
+    style.configure(
+        "Header.TLabel", background=_SURFACE, foreground=_PRIMARY_INK,
+        font=(_HEADING_FONT, 13, "bold"),
+    )
+    style.configure(
+        "Subheader.TLabel", background=_SURFACE, foreground=_MUTED_INK,
+        font=(_HEADING_FONT, 10),
+    )
+
+
 def get_asset_path(relative_path):
     """Get absolute path to resource relative to this script file"""
     base_path = os.path.dirname(os.path.realpath(__file__))
@@ -95,6 +193,7 @@ class ConfigApp:
         self.root = root
         self.root.title("HyperLoop")
         self.root.geometry("620x775")
+        _apply_theme(self.root)
         self.app_icon = set_icon(os.path.join("assets", "img", "HyperLoop.png"))
         if self.app_icon:
             self.root.iconphoto(False, self.app_icon)
@@ -102,9 +201,18 @@ class ConfigApp:
         self.last_result = None
 
         # Main Scrollable Canvas
-        canvas = tk.Canvas(root)
+        canvas = tk.Canvas(root, background=_SURFACE, highlightthickness=0)
         scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
-        self.scrollable_frame = ttk.Frame(canvas, padding=10)
+        self.scrollable_frame = ttk.Frame(canvas, padding=6)
+
+        ttk.Label(
+            self.scrollable_frame, text="HyperLoop", style="Header.TLabel"
+        ).pack(anchor="w")
+        ttk.Label(
+            self.scrollable_frame,
+            text="Configure and launch a black-box optimization run.",
+            style="Subheader.TLabel",
+        ).pack(anchor="w", pady=(0, 4))
 
         self.scrollable_frame.bind(
             "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
@@ -116,6 +224,8 @@ class ConfigApp:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
+        self._bind_mousewheel_scrolling(canvas)
+
         self.parameters = []
         self.objectives = []
 
@@ -126,6 +236,29 @@ class ConfigApp:
         self.build_algorithm_section()
         self.build_footer()
 
+        self._size_window_to_screen()
+
+    def _size_window_to_screen(self):
+        self.root.update_idletasks()
+        content_width = self.scrollable_frame.winfo_reqwidth() + 40
+        content_height = self.scrollable_frame.winfo_reqheight() + 20
+
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+
+        width = min(content_width, screen_width - 80)
+        height = min(content_height, screen_height - 120)
+        self.root.geometry(f"{width}x{height}")
+
+    def _bind_mousewheel_scrolling(self, canvas):
+        def on_wheel(event):
+            direction = -1 if event.delta > 0 else 1
+            canvas.yview_scroll(direction, "units")
+
+        canvas.bind_all("<MouseWheel>", on_wheel)
+        canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+        canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
+
 #===========================================================================
 # Build Functions for each frame of the GUI
 # called at the initization of ConfigApp
@@ -135,14 +268,15 @@ class ConfigApp:
         frame = ttk.LabelFrame(
             self.scrollable_frame,
             text="Worker Configuration",
-            padding=10,
+            padding=6,
         )
-        frame.pack(fill="x", pady=5)
+        frame.pack(fill="x", pady=3)
 
         ttk.Label(frame, text="Worker Script:").grid(row=0, column=0, sticky="w")
 
         default_worker = (
-            Path(__file__).parent / "examples" / "paper_airplane" / "iris_worker.py"
+            Path(__file__).parent / "examples" / "paper_airplane"
+            / _PAPER_AIRPLANE_WORKER
         )
 
         self.worker_path = tk.StringVar(value=str(default_worker))
@@ -157,9 +291,12 @@ class ConfigApp:
             width=35,
         )
 
-        self.worker_combo.grid(row=0, column=1, padx=5, pady=2, sticky="ew")
+        self.worker_combo.grid(row=0, column=1, padx=5, pady=1, sticky="ew")
 
-        if self.available_workers:
+        if _PAPER_AIRPLANE_WORKER in self.available_workers:
+            self.worker_choice.set(_PAPER_AIRPLANE_WORKER)
+            self.worker_path.set(str(self.available_workers[_PAPER_AIRPLANE_WORKER]))
+        elif self.available_workers:
             first = sorted(self.available_workers.keys())[0]
             self.worker_choice.set(first)
             self.worker_path.set(str(self.available_workers[first]))
@@ -173,7 +310,7 @@ class ConfigApp:
         ).grid(row=0, column=2, padx=5)
 
         self.worker_status = ttk.Label(frame)
-        self.worker_status.grid(row=1, column=1, sticky="w", pady=(0, 8))
+        self.worker_status.grid(row=1, column=1, sticky="w", pady=(0, 3))
 
         self.validate_worker()
 
@@ -190,7 +327,7 @@ class ConfigApp:
             column=1,
             columnspan=2,
             sticky="ew",
-            pady=2,
+            pady=1,
         )
 
         ttk.Label(frame, text="Timeout (seconds):").grid(
@@ -206,21 +343,21 @@ class ConfigApp:
             column=1,
             columnspan=2,
             sticky="ew",
-            pady=2,
+            pady=1,
         )
 
         frame.columnconfigure(1, weight=1)
 
     def build_parameters_section(self):
         self.param_frame = ttk.LabelFrame(
-            self.scrollable_frame, text="Optimization Parameters", padding=10
+            self.scrollable_frame, text="Optimization Parameters", padding=6
         )
-        self.param_frame.pack(fill="x", pady=5)
+        self.param_frame.pack(fill="x", pady=3)
 
         add_btn = ttk.Button(
             self.param_frame, text="+ Add Parameter", command=self.add_parameter_row
         )
-        add_btn.pack(anchor="w", pady=5)
+        add_btn.pack(anchor="w", pady=3)
 
         # Headers
         self.header_frame = ttk.Frame(self.param_frame)
@@ -230,55 +367,53 @@ class ConfigApp:
         ttk.Label(self.header_frame, text="Min", width=19).grid(row=0, column=2)
         ttk.Label(self.header_frame, text="Max", width=10).grid(row=0, column=3)
 
-        self.add_parameter_row("learning_rate", "float", "0.0001", "0.1")
-        self.add_parameter_row("hidden_size", "integer", "4", "128")
-        self.add_parameter_row("epochs", "integer", 5, 100)
-        self.add_parameter_row("batch_size", "categorical", "8, 16, 32")
+        for name, kind, p_min, p_max in _PAPER_AIRPLANE_PARAMETERS:
+            self.add_parameter_row(name, kind, p_min, p_max)
 
 
     def build_objectives_section(self):
         self.obj_frame = ttk.LabelFrame(
-            self.scrollable_frame, text="Objectives", padding=10
+            self.scrollable_frame, text="Objectives", padding=6
         )
-        self.obj_frame.pack(fill="x", pady=5)
+        self.obj_frame.pack(fill="x", pady=3)
 
         add_btn = ttk.Button(
             self.obj_frame, text="+ Add Objective", command=self.add_objective_row
         )
-        add_btn.pack(anchor="w", pady=5)
+        add_btn.pack(anchor="w", pady=3)
 
-        self.add_objective_row("validation_accuracy", "maximize")
-        self.add_objective_row("training_time_seconds", "minimize")
+        for name, direction in _PAPER_AIRPLANE_OBJECTIVES:
+            self.add_objective_row(name, direction)
 
     def build_algorithm_section(self):
         frame = ttk.LabelFrame(
-            self.scrollable_frame, text="Algorithm & Stop Policy", padding=10
+            self.scrollable_frame, text="Algorithm & Stop Policy", padding=6
         )
-        frame.pack(fill="x", pady=5)
+        frame.pack(fill="x", pady=3)
 
         ttk.Label(frame, text="Algorithm Name:").grid(row=0, column=0, sticky="w")
         algorithms = ["random_search", "nsga2"]
         self.algo_entry = ttk.Combobox(frame, values=algorithms, width=20)
         self.algo_entry.current(0)
-        self.algo_entry.grid(row=0, column=1, pady=2, sticky="w")
+        self.algo_entry.grid(row=0, column=1, pady=1, sticky="w")
 
         ttk.Label(frame, text="Seed:").grid(row=1, column=0, sticky="w")
         self.seed_entry = ttk.Entry(frame, width=20)
         self.seed_entry.insert(0, "")
-        self.seed_entry.grid(row=1, column=1, pady=2, sticky="w")
+        self.seed_entry.grid(row=1, column=1, pady=1, sticky="w")
 
         ttk.Label(frame, text="Max Trials:").grid(row=2, column=0, sticky="w")
         self.max_trials_entry = ttk.Entry(frame, width=20)
         self.max_trials_entry.insert(0, "20")
-        self.max_trials_entry.grid(row=2, column=1, pady=2, sticky="w")
+        self.max_trials_entry.grid(row=2, column=1, pady=1, sticky="w")
 
     def build_footer(self):
-        btn_frame = ttk.Frame(self.scrollable_frame, padding=10)
-        btn_frame.pack(fill="x", pady=10)
+        btn_frame = ttk.Frame(self.scrollable_frame, padding=6)
+        btn_frame.pack(fill="x", pady=6)
 
         # File naming entry layout
         filename_frame = ttk.Frame(btn_frame)
-        filename_frame.pack(fill="x", pady=5)
+        filename_frame.pack(fill="x", pady=3)
         ttk.Label(filename_frame, text="Save Filename:").pack(side="left")
         self.filename_entry = ttk.Entry(filename_frame, width=30)
         self.filename_entry.insert(0, "config.json")
@@ -286,7 +421,7 @@ class ConfigApp:
 
         # Actions arrangement
         actions_frame = ttk.Frame(btn_frame)
-        actions_frame.pack(fill="x", pady=5)
+        actions_frame.pack(fill="x", pady=3)
 
         self.status_label = ttk.Label(btn_frame, text="Ready")
         self.status_label.pack(anchor="w")
@@ -305,7 +440,10 @@ class ConfigApp:
         self.stop_btn.pack(side="left", expand=True, fill="x", padx=2)
 
         self.go_btn = ttk.Button(
-            actions_frame, text="Do the thing", command=self.run_loop
+            actions_frame,
+            text="Do the thing",
+            command=self.run_loop,
+            style="Accent.TButton",
         )
         self.go_btn.pack(side="left", expand=True, fill="x", padx=2)
 
@@ -316,7 +454,7 @@ class ConfigApp:
 
     def add_parameter_row(self, name="", kind="float", p_min="", p_max=""):
         row_frame = ttk.Frame(self.param_frame)
-        row_frame.pack(fill="x", pady=2)
+        row_frame.pack(fill="x", pady=1)
 
         name_ent = ttk.Entry(row_frame, width=15)
         name_ent.insert(0, name)
@@ -370,7 +508,7 @@ class ConfigApp:
 
     def add_objective_row(self, name="", direction="maximize"):
         row_frame = ttk.Frame(self.obj_frame)
-        row_frame.pack(fill="x", pady=2)
+        row_frame.pack(fill="x", pady=1)
 
         name_ent = ttk.Entry(row_frame, width=25)
         name_ent.insert(0, name)
@@ -442,6 +580,24 @@ class ConfigApp:
 
         self.worker_path.set(str(self.available_workers[selection]))
         self.validate_worker()
+
+        if selection == _PAPER_AIRPLANE_WORKER:
+            self._load_paper_airplane_defaults()
+
+    def _load_paper_airplane_defaults(self):
+        """Replace current parameter/objective rows with the airplane worker's."""
+
+        for row in list(self.parameters):
+            self.remove_row(row["frame"], self.parameters, row)
+
+        for row in list(self.objectives):
+            self.remove_row(row["frame"], self.objectives, row)
+
+        for name, kind, p_min, p_max in _PAPER_AIRPLANE_PARAMETERS:
+            self.add_parameter_row(name, kind, p_min, p_max)
+
+        for name, direction in _PAPER_AIRPLANE_OBJECTIVES:
+            self.add_objective_row(name, direction)
 
     def discover_workers(self):
         """Find all worker scripts under the examples directory."""
@@ -581,10 +737,20 @@ class ConfigApp:
     def generate_json(self):
         try:
             config = self.build_config_dict()
-            preview_win = tk.Toplevel(self.root)
+            preview_win = tk.Toplevel(self.root, background=_PAGE)
             preview_win.title("JSON Preview")
             preview_win.iconphoto(False, self.app_icon)
-            text_area = tk.Text(preview_win, width=60, height=25)
+            text_area = tk.Text(
+                preview_win,
+                width=60,
+                height=25,
+                background=_SURFACE,
+                foreground=_PRIMARY_INK,
+                insertbackground=_PRIMARY_INK,
+                relief="solid",
+                borderwidth=1,
+                highlightthickness=0,
+            )
             text_area.insert(tk.END, json.dumps(config, indent=2))
             text_area.pack(padx=10, pady=10)
         except ValueError as e:
@@ -689,7 +855,7 @@ class ConfigApp:
             self.stop_btn.config(state="normal")
 
             # Starts the progress bar
-            self.status_label.config(text="Running optimization...")
+            self.status_label.config(text="Running optimization...", foreground=_ACCENT)
 
             # Launch optimizer
             self.worker_thread = threading.Thread(
@@ -733,7 +899,7 @@ class ConfigApp:
             )
 
         except Exception as e:
-            self.root.after(0, lambda: self.optimizer_failed(e))
+            self.root.after(0, lambda e=e: self.optimizer_failed(e))
 
     # Triggers a KeyboardInterrupt inside the optimizer 
     def stop_optimizer(self):
@@ -746,7 +912,7 @@ class ConfigApp:
 
     def optimizer_finished(self, output_dir):
         """Display a summary when the optimizer finishes."""
-        self.status_label.config(text="Optimization complete.")
+        self.status_label.config(text="Optimization complete.", foreground=_STATUS_GOOD)
         self.trials_label.config(text="")
 
         self.go_btn.config(state="normal")
@@ -754,7 +920,7 @@ class ConfigApp:
 
         self.last_output_dir = Path(output_dir)
 
-        window = tk.Toplevel(self.root)
+        window = tk.Toplevel(self.root, background=_PAGE)
         window.title("Optimization Complete")
         window.iconphoto(False, self.app_icon)
         window.resizable(False, False)
@@ -765,7 +931,8 @@ class ConfigApp:
         ttk.Label(
             frame,
             text="✓ Optimization Complete",
-            font=("Segoe UI", 14, "bold"),
+            font=(_HEADING_FONT, 14, "bold"),
+            foreground=_STATUS_GOOD,
         ).pack(anchor="w", pady=(0, 15))
 
         ttk.Label(
@@ -798,10 +965,10 @@ class ConfigApp:
         self.go_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
 
-        self.status_label.config(text="Optimization stopped.")
+        self.status_label.config(text="Optimization stopped.", foreground=_MUTED_INK)
         self.trials_label.config(text="")
 
-        window = tk.Toplevel(self.root)
+        window = tk.Toplevel(self.root, background=_PAGE)
         window.title("Optimization Stopped")
         window.iconphoto(False, self.app_icon)
 
@@ -811,7 +978,8 @@ class ConfigApp:
         ttk.Label(
             frame,
             text="⏹ Optimization Stopped",
-            font=("Segoe UI", 14, "bold"),
+            font=(_HEADING_FONT, 14, "bold"),
+            foreground=_MUTED_INK,
         ).pack(anchor="w", pady=(0, 15))
 
         ttk.Label(
@@ -835,7 +1003,7 @@ class ConfigApp:
         self.go_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
 
-        self.status_label.config(text="Optimization failed.")
+        self.status_label.config(text="Optimization failed.", foreground=_STATUS_CRITICAL)
         self.trials_label.config(text="")
 
         messagebox.showerror(
