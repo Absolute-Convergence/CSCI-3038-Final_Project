@@ -30,6 +30,8 @@ See [docs/package-release-checklist.md](docs/package-release-checklist.md) for
 the single-package v0.1.1 release boundary, audit evidence, and publication
 gates.
 
+See https://www.youtube.com/watch?v=uJGIRFCtbKU for the demo guide.
+
 The current planning guidance is the aligned Draft v0.2 document set in
 [`docs/planning_baseline_v02`](docs/planning_baseline_v02). It remains pending
 team ratification and technical approval. Draft v0.1 is preserved unchanged in
