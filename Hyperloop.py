@@ -52,6 +52,19 @@ from pathlib import Path
 from datetime import datetime
 from black_box_optimizer.application import initialize_application
 
+import hyperloop_help
+from hyperloop_theme import (
+    _PAGE,
+    _SURFACE,
+    _PRIMARY_INK,
+    _MUTED_INK,
+    _ACCENT,
+    _STATUS_GOOD,
+    _STATUS_CRITICAL,
+    _HEADING_FONT,
+    _apply_theme,
+)
+
 
 def _open_folder(path):
     """Open a folder in the platform file manager without blocking Tkinter."""
@@ -72,21 +85,6 @@ def _open_folder(path):
         )
 
 
-_PAGE = "#fdf1f5"
-_SURFACE = "#fffafc"
-_PRIMARY_INK = "#6b1236"
-_SECONDARY_INK = "#9c4267"
-_MUTED_INK = "#b97b93"
-_GRIDLINE = "#f3c6d9"
-_BUTTON_WASH = "#fbe4ec"
-_BUTTON_WASH_ACTIVE = "#f6c9da"
-_ACCENT = "#c2255c"
-_ACCENT_ACTIVE = "#a51e4d"
-_ACCENT_TEXT = "#ffffff"
-_STATUS_GOOD = "#0ca30c"  # not pinked -- success/failure must stay distinct
-_STATUS_CRITICAL = "#d03b3b"
-_HEADING_FONT = "Helvetica"
-
 _PAPER_AIRPLANE_WORKER = "paper_airplane_worker.py"
 
 _PAPER_AIRPLANE_PARAMETERS = [
@@ -101,73 +99,6 @@ _PAPER_AIRPLANE_OBJECTIVES = [
     ("flight_distance_m", "maximize"),
     ("landing_accuracy_pct", "maximize"),
 ]
-
-
-def _apply_theme(root):
-    style = ttk.Style(root)
-    try:
-        style.theme_use("clam")
-    except tk.TclError:
-        pass  # fall back to whatever theme this platform ships by default
-
-    root.configure(background=_PAGE)
-
-    style.configure("TFrame", background=_SURFACE)
-    style.configure(
-        "TLabel", background=_SURFACE, foreground=_SECONDARY_INK,
-        font=(_HEADING_FONT, 11),
-    )
-    style.configure(
-        "TLabelframe", background=_SURFACE, bordercolor=_GRIDLINE,
-        relief="solid", borderwidth=1,
-    )
-    style.configure(
-        "TLabelframe.Label", background=_SURFACE, foreground=_PRIMARY_INK,
-        font=(_HEADING_FONT, 10, "bold"),
-    )
-    style.configure(
-        "TButton", background=_BUTTON_WASH, foreground=_PRIMARY_INK,
-        bordercolor=_GRIDLINE, padding=3, font=(_HEADING_FONT, 10),
-    )
-    style.map(
-        "TButton",
-        background=[("active", _BUTTON_WASH_ACTIVE), ("disabled", _SURFACE)],
-        foreground=[("disabled", _MUTED_INK)],
-    )
-    style.configure(
-        "Accent.TButton", background=_ACCENT, foreground=_ACCENT_TEXT,
-        font=(_HEADING_FONT, 10, "bold"), padding=5,
-    )
-    style.map(
-        "Accent.TButton",
-        background=[("active", _ACCENT_ACTIVE), ("disabled", _MUTED_INK)],
-    )
-    style.configure(
-        "TEntry", fieldbackground=_SURFACE, bordercolor=_GRIDLINE,
-        font=(_HEADING_FONT, 11),
-    )
-    style.configure(
-        "TCombobox", fieldbackground=_SURFACE, background=_BUTTON_WASH,
-        arrowcolor=_PRIMARY_INK, bordercolor=_GRIDLINE,
-        font=(_HEADING_FONT, 11),
-    )
-    style.map(
-        "TCombobox",
-        fieldbackground=[("readonly", _SURFACE)],
-        background=[("readonly", _BUTTON_WASH)],
-    )
-    root.option_add("*TCombobox*Listbox.background", _SURFACE)
-    root.option_add("*TCombobox*Listbox.foreground", _PRIMARY_INK)
-    root.option_add("*TCombobox*Listbox.selectBackground", _ACCENT)
-    root.option_add("*TCombobox*Listbox.selectForeground", _ACCENT_TEXT)
-    style.configure(
-        "Header.TLabel", background=_SURFACE, foreground=_PRIMARY_INK,
-        font=(_HEADING_FONT, 13, "bold"),
-    )
-    style.configure(
-        "Subheader.TLabel", background=_SURFACE, foreground=_MUTED_INK,
-        font=(_HEADING_FONT, 10),
-    )
 
 
 def get_asset_path(relative_path):
@@ -210,14 +141,38 @@ class ConfigApp:
         scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
         self.scrollable_frame = ttk.Frame(canvas, padding=6)
 
+        header_row = ttk.Frame(self.scrollable_frame)
+        header_row.pack(fill="x")
+
+        title_col = ttk.Frame(header_row)
+        title_col.pack(side="left", anchor="w")
+
         ttk.Label(
-            self.scrollable_frame, text="HyperLoop", style="Header.TLabel"
+            title_col, text="HyperLoop", style="Header.TLabel"
         ).pack(anchor="w")
         ttk.Label(
-            self.scrollable_frame,
+            title_col,
             text="Configure and launch a black-box optimization run.",
             style="Subheader.TLabel",
         ).pack(anchor="w", pady=(0, 4))
+
+        help_col = ttk.Frame(header_row)
+        help_col.pack(side="right", anchor="n", pady=(2, 0))
+
+        ttk.Button(
+            help_col,
+            text="Instructions",
+            command=lambda: hyperloop_help.show_instructions(
+                self.root, self.app_icon
+            ),
+        ).pack(anchor="e")
+        ttk.Button(
+            help_col,
+            text="Special Mr. Smith Instructions",
+            command=lambda: hyperloop_help.show_mr_smith_instructions(
+                self.root, self.app_icon
+            ),
+        ).pack(anchor="e", pady=(4, 0))
 
         self.scrollable_frame.bind(
             "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
@@ -446,7 +401,7 @@ class ConfigApp:
 
         self.go_btn = ttk.Button(
             actions_frame,
-            text="Do the thing",
+            text="Do the Thing",
             command=self.run_loop,
             style="Accent.TButton",
         )
