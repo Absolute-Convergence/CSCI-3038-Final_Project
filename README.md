@@ -30,6 +30,8 @@ See [docs/package-release-checklist.md](docs/package-release-checklist.md) for
 the single-package v0.1.1 release boundary, audit evidence, and publication
 gates.
 
+See https://www.youtube.com/watch?v=uJGIRFCtbKU for the demo guide.
+
 The current planning guidance is the aligned Draft v0.2 document set in
 [`docs/planning_baseline_v02`](docs/planning_baseline_v02). It remains pending
 team ratification and technical approval. Draft v0.1 is preserved unchanged in
@@ -245,6 +247,35 @@ Additional implemented surfaces are imported from their owning modules:
 - `black_box_optimizer.search.nsga2.NSGA2`
 
 See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for reproduced defects in merged code.
+
+## Quick install instructions 
+- TO RUN ON MAC:
+
+git clone https://github.com/Absolute-Convergence/CSCI-3038-Final_Project.git
+cd CSCI-3038-Final_Project
+
+python3 --version
+(Make sure it’s 3.13)
+python3 -m venv .venv
+source .venv/bin/activate
+
+python3 -m pip install --upgrade pip setuptools
+python3 -m pip install -e .
+
+python3 -m black_box_optimizer \
+  examples/paper_airplane/paper_airplane_config.json \
+  --output-dir runs
+(or whatever worker you have)
+
+- TO RUN with GUI on Mac or Windows
+python3 -m venv .venv     (Mac only)
+source .venv/bin/activate (Mac only)
+
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-gui.txt
+
+python Hyperloop.py
 
 ## Install and Run Hyperloop
 

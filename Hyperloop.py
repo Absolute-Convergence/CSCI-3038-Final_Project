@@ -173,13 +173,18 @@ def _apply_theme(root):
 def get_asset_path(relative_path):
     """Get absolute path to resource relative to this script file"""
     base_path = os.path.dirname(os.path.realpath(__file__))
-
+# Combine the script folder with the requested resource path.
     return os.path.normpath(os.path.join(base_path, relative_path))
 
 
 def set_icon(relative_img_path):
+    """Load and return the application icon."""
+
     try:
+        # Get the complete path to the icon image.
         icon_img_path = get_asset_path(relative_img_path)
+
+        # Open the image and convert it into a Tkinter-compatible format.
         icon_img = Image.open(icon_img_path)
         icon = ImageTk.PhotoImage(icon_img)
         return icon
@@ -855,7 +860,7 @@ class ConfigApp:
             self.stop_btn.config(state="normal")
 
             # Starts the progress bar
-            self.status_label.config(text="Running optimization...", foreground=_ACCENT)
+            self.status_label.config(text="Running Optimization", foreground=_ACCENT)
 
             # Launch optimizer
             self.worker_thread = threading.Thread(
@@ -961,6 +966,7 @@ class ConfigApp:
             command=window.destroy,
         ).pack(side="right", padx=5)
 
+# Reset the interface and show a message when the user stops the optimization.
     def optimizer_cancelled(self, output_dir):
         self.go_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
