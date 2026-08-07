@@ -2,7 +2,7 @@
   "worker": {
     "command": [
       "C:\\Users\\wanna\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
-      "C:\\dev\\final_proj\\CSCI-3038-Final_Project\\examples\\paper_airplane\\paper_airplane_worker.py"
+      "C:\\dev\\final_proj\\CSCI-3038-Final_Project\\examples\\iris_torch\\iris_worker.py"
     ],
     "metrics_argument": "--metrics-out",
     "timeout_seconds": 120.0
@@ -35,12 +35,6 @@
           16,
           32
         ]
-      },
-      {
-        "name": "asdfgag",
-        "kind": "float",
-        "minimum": 1.0,
-        "maximum": 10.0
       }
     ],
     "objectives": [
