@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/img/HyLoop.png" alt="Hyperloop logo" width="320">
+  <img src="assets/img/HyperLoop.png" alt="Hyperloop logo" width="160">
 </p>
 
 # Hyperloop
