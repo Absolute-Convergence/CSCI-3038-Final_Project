@@ -1,281 +1,71 @@
+<p align="center">
+  <img src="assets/img/HyLoop.png" alt="Hyperloop logo" width="320">
+</p>
+
 # Hyperloop
 
-CSCI 3038 final project by The Snek People.
+**Tune any program without looking inside it.** Hyperloop runs your program
+with different command-line settings, reads back the metrics it reports, and
+returns the Pareto front: every setting where you can't improve one goal
+without giving up another.
 
-Hyperloop is a local Python 3.13.14 black-box optimizer for
-tuning an external worker program without importing or inspecting that
-worker's internal code. It sends candidate parameters through command-line
-flags, receives one row of numerical metrics through a trial-specific CSV
-file, and returns the complete non-dominated Pareto Front across multiple
-objectives.
+It works with anything you can run from a terminal (a training script, a
+simulation, a compiled binary), because it never imports or inspects your
+code. It just runs the command you give it.
 
-The implemented MVP includes immutable configuration and candidate models,
-validated JSON loading, declared-domain proposal validation, seeded Random
-Search and NSGA-II, synchronous cancellable worker execution, immutable trial
-records, append-only history, lifecycle control, atomic persistence, complete
-mixed-direction Pareto evaluation, immutable results, reporting, and module
-and installed command-line entry points. The external PyTorch Iris worker
-remains outside the distribution. A dependency-free ZDT1 synthetic worker is
-distributed in a separate namespace so Hyperloop can still treat it as an
-opaque subprocess.
-
-See [docs/architecture-baseline.md](docs/architecture-baseline.md) for the
-controlling foundation contracts and MVP boundaries.
-
-See [docs/gui-handoff-next-steps.md](docs/gui-handoff-next-steps.md) for the
-recommended handoff from Charles's Tkinter GUI to Hyperloop's existing CLI and
-run artifacts.
-
-See [docs/package-release-checklist.md](docs/package-release-checklist.md) for
-the single-package v0.1.1 release boundary, audit evidence, and publication
-gates.
-
-See https://www.youtube.com/watch?v=uJGIRFCtbKU for the demo guide.
-
-The current planning guidance is the aligned Draft v0.2 document set in
-[`docs/planning_baseline_v02`](docs/planning_baseline_v02). It remains pending
-team ratification and technical approval. Draft v0.1 is preserved unchanged in
-[`docs/planning_baseline_v01`](docs/planning_baseline_v01) as the historical
-source baseline.
-
-Repository decisions and operating guidance in [AGENTS.md](AGENTS.md), together
-with the approved architecture baseline, control when the draft planning set
-conflicts with merged code or a recorded human decision. Public-contract
-differences must still be reconciled through change control; implementation
-drift recorded in scratch notes does not silently amend a controlled contract.
-
-## MVP Runtime Flow
-
-```text
-JSON project configuration
-          |
-          v
-Configuration loader -> immutable ProjectConfiguration
-          |
-          v
-Random Search or NSGA-II -> immutable CandidateConfiguration
-          |
-          v
-Controller + StopPolicy -> synchronous local Runner
-          |                         |
-          |                         v
-          |                external opaque worker
-          |                         |
-          |                         v
-          |                 one-row metrics CSV
-          |                         |
-          v                         v
-TrialRecord factory <------ execution and metrics observations
-          |
-          v
-append-only TrialHistory
-          |
-          v
-mixed-direction Pareto evaluator
-          |
-          v
-OptimizationResult containing the complete Pareto Front
-          |
-          +----> reporting and exports
-          +----> optional GUI presentation
+```bash
+pip install hyperloop-optimizer
+hyperloop-optimizer path/to/config.json --output-dir runs
 ```
 
-Only the controller may authorize a worker launch. At most one worker process
-will run at a time. Reporting and GUI code will consume optimizer results but
-must not select candidates, change history, or replace the Pareto Front with a
-weighted winner.
+## How well does it search?
 
-## Project Structure and Status
+Hyperloop ships two search strategies: random search and NSGA-II, a genetic
+algorithm for multi-objective problems. On the ZDT1 benchmark (500 trials per
+run, 20 seeds), each NSGA-II upgrade moved results measurably closer to the
+true optimum:
 
-Items marked `implemented` exist in the completed implementation stack. The GUI
-remains an optional, independent presentation layer.
+| Strategy | % of optimal hypervolume (seeds 0–19) | (20 random seeds) |
+|---|---|---|
+| Random search | 23.1% | 20.3% |
+| NSGA-II, original | 44.7% | 43.9% |
+| + elitism | 83.1% | 86.9% |
+| + polynomial mutation (shipped) | **93.6%** | **96.5%** |
 
-```text
-CSCI-3038-Final_Project/
-|-- AGENTS.md                         # repository rules and scratch memory
-|-- KNOWN_ISSUES.md                   # reproduced defects in merged code
-|-- README.md                         # project overview and development map
-|-- pyproject.toml                    # package metadata and installed CLI
-|-- requirements.txt                 # core optimizer/reporting dependencies
-|-- requirements-iris.txt            # external Iris worker dependency
-|-- requirements-gui.txt             # optional source GUI dependency
-|-- requirements-release.txt         # build and publication tools
-|-- source_hygiene.json               # global source-file hygiene settings
-|-- black_box_optimizer/
-|   |-- __init__.py                   # implemented public model exports
-|   |-- __main__.py                   # implemented module entry point
-|   |-- cli.py                        # implemented CLI composition
-|   |-- application.py                # implemented initialization/composition
-|   |-- models.py                     # implemented immutable foundation types
-|   |-- config_loader.py              # implemented JSON parsing and validation
-|   |-- controller.py                 # implemented lifecycle governor
-|   |-- runner.py                     # implemented Popen subprocess boundary
-|   |-- metrics.py                    # implemented one-row CSV parser
-|   |-- records.py                    # implemented TrialRecord construction
-|   |-- history.py                    # implemented append-only TrialHistory
-|   |-- persistence.py                # implemented history + trial artifacts
-|   |-- stop_policy.py                # implemented maximum-trial decisions
-|   |-- pareto.py                     # implemented eligibility/dominance/sweep
-|   |-- results.py                    # implemented immutable result contracts
-|   |-- reporting.py                  # implemented result export boundary
-|   `-- search/
-|       |-- base.py                   # implemented search protocol/results
-|       |-- registry.py               # implemented built-in algorithm registry
-|       |-- random_search.py          # implemented seeded Random Search
-|       `-- nsga2.py                  # implemented seeded NSGA-II
-|-- hyperloop_workers/
-|   |-- __init__.py                   # separate bundled-worker namespace
-|   `-- synthetic_worker.py           # dependency-free ZDT1 worker
-|-- examples/
-|   |-- __init__.py                   # implemented, makes examples importable
-|   |-- iris_torch/
-|   |   |-- __init__.py               # implemented package marker
-|   |   |-- iris_config.json          # implemented example configuration
-|   |   |-- iris-data.csv             # implemented bundled Iris dataset
-|   |   `-- iris_worker.py            # external PyTorch worker
-|   |-- zdt1_benchmark/
-|   |   |-- synthetic_config.json     # dependency-free smoke-test config
-|   |   `-- compare_search_algorithms.py
-|   `-- paper_airplane/
-|       |-- __init__.py               # package marker
-|       |-- paper_airplane_config.json       # example configuration
-|       `-- paper_airplane_worker.py  # fun demo worker, known-optimal Pareto front
-|-- tests/
-|   |-- test_models.py                # implemented foundation-model tests
-|   |-- test_metrics.py               # implemented metrics-parser tests
-|   |-- test_records.py               # implemented trial-record tests
-|   |-- test_stop_policy.py           # implemented stop-policy tests
-|   |-- test_history.py               # implemented trial-history tests
-|   |-- test_runner.py                # implemented execute tests
-|   |-- test_search_base.py           # implemented ProposalResult tests
-|   |-- test_search_registry.py       # implemented algorithm-registry tests
-|   |-- test_random_search.py         # implemented RandomSearch tests
-|   |-- test_nsga2.py                 # implemented NSGA-II tests
-|   |-- test_iris_worker.py           # implemented Iris worker tests
-|   |-- test_zdt1_benchmark.py        # synthetic worker/benchmark tests
-|   |-- test_packaging.py             # distribution-boundary tests
-|   |-- test_check_monoliths.py       # implemented hygiene-checker tests
-|   |-- test_controller.py            # implemented ApplicationController tests
-|   |-- test_pareto.py                # implemented full Pareto tests
-|   |-- test_persistence.py           # implemented RunDirectory tests
-|   |-- test_application.py           # implemented composition tests
-|   |-- test_cli.py                   # implemented CLI status tests
-|   |-- unit/                         # planned focused unit tests
-|   |-- integration/
-|   |   |-- test_one_trial_slice.py   # implemented module-level slice
-|   |   |-- test_full_pipeline_real_worker.py
-|   |   |-- test_application_real_worker.py
-|   |   `-- test_cli_acceptance.py    # implemented real application slices
-|   `-- fixtures/                     # implemented purpose-built workers
-|-- docs/
-|   |-- architecture-baseline.md      # implemented controlling baseline
-|   |-- gui-handoff-next-steps.md     # recommended GUI integration sequence
-|   |-- planning_baseline_v01/        # preserved historical planning baseline
-|   `-- planning_baseline_v02/        # current aligned draft planning guidance
-`-- tools/
-    `-- check_monoliths.py            # implemented source hygiene checker
-```
+![Hypervolume over 500 trials for each NSGA-II version](examples/zdt1_benchmark/legacy_algorithms/evolution_comparison_results/nsga2_versions_compared.png)
 
-Workers remain outside `black_box_optimizer`. The installed
-`hyperloop_workers.synthetic_worker` uses only the Python standard library.
-PyTorch belongs only to the source-checkout Iris example and its tests; it is
-not a dependency of the Hyperloop distribution.
+The shipped NSGA-II pulls significantly ahead of random search (Mann-Whitney U)
+from 150 trials onward. Full methodology:
+[NSGA-II evolution and evaluation](docs/decisions/2026-08-04-nsga2-evolution-and-evaluation.md).
 
-## Component Responsibilities
+## Try it in 30 seconds
 
-| Component | Owns | Must not own |
-| --- | --- | --- |
-| Configuration loader | JSON parsing and complete pre-run validation | Worker execution or candidate search |
-| Search algorithm | Legal untried candidate proposals | Subprocesses, stopping, or Pareto ranking |
-| Controller | Sequential lifecycle and launch authorization | Worker internals or metric weighting |
-| Stop policy | Maximum-trial decision | Candidate selection or process control |
-| Runner | CLI construction, timeout, and process observations | Search or objective interpretation |
-| Record factory | Metrics parsing and immutable trial evidence | History mutation beyond one append request |
-| Trial history | Ordered append-only records and tuple snapshots | Ranking, deletion, or rewriting evidence |
-| Persistence | Run/trial directories, diagnostics, and atomic history checkpoints | Ranking, evaluating, or interpreting metrics |
-| Pareto evaluator | Eligibility, mixed-direction dominance, and complete front | Weighted scoring or worker execution |
-| Reporter | Authoritative exports and explanatory visualization | Optimizer state or universal-winner selection |
-| GUI | Optional presentation of authoritative results | Required optimizer logic or result mutation |
+The Paper Airplane example is a near-instant demo problem with a known optimal
+front:
 
-The intended dependency direction is inward toward immutable contracts. The
-Runner will not import search or Pareto code; RandomSearch will not import the
-Runner; and the optimizer package will never import a worker implementation.
-
-## Implemented Public Surfaces
-
-`load_configuration(path)` reads one UTF-8 JSON project file, validates its
-complete structure before any trial can run, resolves relative worker script
-or executable paths from the configuration file's directory, and returns an
-immutable `ProjectConfiguration`. Invalid input raises `ConfigurationError`
-with one or more location-aware issues.
-
-The `black_box_optimizer` package root currently exports:
-
-- `ParameterKind`
-- `ParameterDefinition`
-- `Direction`
-- `Objective`
-- `OptimizationContract`
-- `WorkerSpec`
-- `AlgorithmSpec`
-- `StopPolicy`
-- `ProjectConfiguration`
-- `CandidateConfiguration`
-- `ParetoFront`
-- `OptimizationResult`
-- `ConfigurationError`
-- `load_configuration`
-
-These are frozen dataclasses or string enums. Ordered collections use tuples,
-and candidate mappings are defensively copied into read-only views.
-
-Additional implemented surfaces are imported from their owning modules:
-
-- `black_box_optimizer.metrics.read_trial_metrics`
-- `black_box_optimizer.records.TrialRecord` and `build_trial_record`
-- `black_box_optimizer.history.TrialHistory`
-- `black_box_optimizer.stop_policy.StopDecision` and `StopPolicyEvaluator`
-- `black_box_optimizer.runner.execute`
-- `black_box_optimizer.controller.ApplicationController`
-- `black_box_optimizer.pareto.is_eligible`
-- `black_box_optimizer.persistence.RunDirectory` and `create_run_directory`
-- `black_box_optimizer.reporting.Reporter`
-- `black_box_optimizer.application.initialize_application`
-- `black_box_optimizer.search.base.ProposalResult` and `SearchAlgorithm`
-- `black_box_optimizer.search.registry.create_algorithm`
-- `black_box_optimizer.search.random_search.RandomSearch`
-- `black_box_optimizer.search.nsga2.NSGA2`
-
-See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for reproduced defects in merged code.
-
-## Quick install instructions 
-- TO RUN ON MAC:
-
+```bash
 git clone https://github.com/Absolute-Convergence/CSCI-3038-Final_Project.git
 cd CSCI-3038-Final_Project
-
-python3 --version
-(Make sure it’s 3.13)
-python3 -m venv .venv
-source .venv/bin/activate
-
-python3 -m pip install --upgrade pip setuptools
+python3 -m venv .venv && source .venv/bin/activate
 python3 -m pip install -e .
+python3 -m black_box_optimizer examples/paper_airplane/paper_airplane_config.json --output-dir runs
+```
 
-python3 -m black_box_optimizer \
-  examples/paper_airplane/paper_airplane_config.json \
-  --output-dir runs
-(or whatever worker you have)
+Prefer a GUI? Install `requirements-gui.txt` and run `python Hyperloop.py`.
+A walkthrough video is [on YouTube](https://www.youtube.com/watch?v=uJGIRFCtbKU).
 
-- TO RUN with GUI on Mac or Windows
-python3 -m venv .venv     (Mac only)
-source .venv/bin/activate (Mac only)
+## What's in the box
 
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-gui.txt
-
-python Hyperloop.py
+- **Two search strategies** behind a pluggable interface: seeded random search
+  and NSGA-II
+- **Bring your own worker:** any command that accepts flags and writes one CSV
+  row of metrics ([worker contract](#bring-your-own-worker))
+- **Reproducible runs:** seeded search, immutable trial records, and atomic
+  checkpoints of every run's history
+- **Safety rails:** config validation before any trial runs, plus stop policies
+  for trial limits and repeated worker failures
+- **Tested:** 400+ unit and integration tests, 99% branch coverage
+- **Examples:** Paper Airplane (instant), ZDT1 (benchmark), Iris (PyTorch)
 
 ## Install and Run Hyperloop
 
@@ -532,7 +322,48 @@ sections: `worker`, `optimization`, `algorithm`, `stop_policy`.
 - **`stop_policy.max_trials`** -- a positive integer, the hard ceiling
   on how many trials this run will attempt.
 
-## MVP Boundaries
+## How It Works
+
+```text
+JSON project configuration
+          |
+          v
+Configuration loader -> immutable ProjectConfiguration
+          |
+          v
+Random Search or NSGA-II -> immutable CandidateConfiguration
+          |
+          v
+Controller + StopPolicy -> synchronous local Runner
+          |                         |
+          |                         v
+          |                external opaque worker
+          |                         |
+          |                         v
+          |                 one-row metrics CSV
+          |                         |
+          v                         v
+TrialRecord factory <------ execution and metrics observations
+          |
+          v
+append-only TrialHistory
+          |
+          v
+mixed-direction Pareto evaluator
+          |
+          v
+OptimizationResult containing the complete Pareto Front
+          |
+          +----> reporting and exports
+          +----> optional GUI presentation
+```
+
+Only the controller may authorize a worker launch. At most one worker process
+will run at a time. Reporting and GUI code will consume optimizer results but
+must not select candidates, change history, or replace the Pareto Front with a
+weighted winner.
+
+### Design boundaries
 
 - Local execution only
 - Synchronous and sequential worker trials
@@ -545,7 +376,180 @@ sections: `worker`, `optimization`, `algorithm`, `stop_policy`.
 - The complete Pareto Front, with no automatically selected universal winner
 - GUI code optional and independent from optimizer logic
 
-## Trunk-Based Development Workflow
+## For Contributors
+
+### Project documents
+
+- [docs/architecture-baseline.md](docs/architecture-baseline.md): controlling foundation contracts and MVP boundaries
+- [docs/decisions/](docs/decisions): dated design decisions, including the NSGA-II design and evaluation
+- [docs/package-release-checklist.md](docs/package-release-checklist.md): v0.1.1 release boundary, audit evidence, and publication gates
+- [docs/gui-handoff-next-steps.md](docs/gui-handoff-next-steps.md): handoff from the Tkinter GUI to the CLI and run artifacts
+- [docs/planning_baseline_v02](docs/planning_baseline_v02) (current draft) and [docs/planning_baseline_v01](docs/planning_baseline_v01) (historical): planning documents
+- [AGENTS.md](AGENTS.md): repository rules and working notes; together with the architecture baseline, it controls when the draft planning set conflicts with merged code or a recorded decision
+- [KNOWN_ISSUES.md](KNOWN_ISSUES.md): reproduced defects in merged code
+
+### Project structure
+
+Items marked `implemented` exist in the completed implementation stack. The GUI
+remains an optional, independent presentation layer.
+
+```text
+CSCI-3038-Final_Project/
+|-- AGENTS.md                         # repository rules and scratch memory
+|-- KNOWN_ISSUES.md                   # reproduced defects in merged code
+|-- README.md                         # project overview and development map
+|-- pyproject.toml                    # package metadata and installed CLI
+|-- requirements.txt                 # core optimizer/reporting dependencies
+|-- requirements-iris.txt            # external Iris worker dependency
+|-- requirements-gui.txt             # optional source GUI dependency
+|-- requirements-release.txt         # build and publication tools
+|-- source_hygiene.json               # global source-file hygiene settings
+|-- black_box_optimizer/
+|   |-- __init__.py                   # implemented public model exports
+|   |-- __main__.py                   # implemented module entry point
+|   |-- cli.py                        # implemented CLI composition
+|   |-- application.py                # implemented initialization/composition
+|   |-- models.py                     # implemented immutable foundation types
+|   |-- config_loader.py              # implemented JSON parsing and validation
+|   |-- controller.py                 # implemented lifecycle governor
+|   |-- runner.py                     # implemented Popen subprocess boundary
+|   |-- metrics.py                    # implemented one-row CSV parser
+|   |-- records.py                    # implemented TrialRecord construction
+|   |-- history.py                    # implemented append-only TrialHistory
+|   |-- persistence.py                # implemented history + trial artifacts
+|   |-- stop_policy.py                # implemented maximum-trial decisions
+|   |-- pareto.py                     # implemented eligibility/dominance/sweep
+|   |-- results.py                    # implemented immutable result contracts
+|   |-- reporting.py                  # implemented result export boundary
+|   `-- search/
+|       |-- base.py                   # implemented search protocol/results
+|       |-- registry.py               # implemented built-in algorithm registry
+|       |-- random_search.py          # implemented seeded Random Search
+|       `-- nsga2.py                  # implemented seeded NSGA-II
+|-- hyperloop_workers/
+|   |-- __init__.py                   # separate bundled-worker namespace
+|   `-- synthetic_worker.py           # dependency-free ZDT1 worker
+|-- examples/
+|   |-- __init__.py                   # implemented, makes examples importable
+|   |-- iris_torch/
+|   |   |-- __init__.py               # implemented package marker
+|   |   |-- iris_config.json          # implemented example configuration
+|   |   |-- iris-data.csv             # implemented bundled Iris dataset
+|   |   `-- iris_worker.py            # external PyTorch worker
+|   |-- zdt1_benchmark/
+|   |   |-- synthetic_config.json     # dependency-free smoke-test config
+|   |   `-- compare_search_algorithms.py
+|   `-- paper_airplane/
+|       |-- __init__.py               # package marker
+|       |-- paper_airplane_config.json       # example configuration
+|       `-- paper_airplane_worker.py  # fun demo worker, known-optimal Pareto front
+|-- tests/
+|   |-- test_models.py                # implemented foundation-model tests
+|   |-- test_metrics.py               # implemented metrics-parser tests
+|   |-- test_records.py               # implemented trial-record tests
+|   |-- test_stop_policy.py           # implemented stop-policy tests
+|   |-- test_history.py               # implemented trial-history tests
+|   |-- test_runner.py                # implemented execute tests
+|   |-- test_search_base.py           # implemented ProposalResult tests
+|   |-- test_search_registry.py       # implemented algorithm-registry tests
+|   |-- test_random_search.py         # implemented RandomSearch tests
+|   |-- test_nsga2.py                 # implemented NSGA-II tests
+|   |-- test_iris_worker.py           # implemented Iris worker tests
+|   |-- test_zdt1_benchmark.py        # synthetic worker/benchmark tests
+|   |-- test_packaging.py             # distribution-boundary tests
+|   |-- test_check_monoliths.py       # implemented hygiene-checker tests
+|   |-- test_controller.py            # implemented ApplicationController tests
+|   |-- test_pareto.py                # implemented full Pareto tests
+|   |-- test_persistence.py           # implemented RunDirectory tests
+|   |-- test_application.py           # implemented composition tests
+|   |-- test_cli.py                   # implemented CLI status tests
+|   |-- unit/                         # planned focused unit tests
+|   |-- integration/
+|   |   |-- test_one_trial_slice.py   # implemented module-level slice
+|   |   |-- test_full_pipeline_real_worker.py
+|   |   |-- test_application_real_worker.py
+|   |   `-- test_cli_acceptance.py    # implemented real application slices
+|   `-- fixtures/                     # implemented purpose-built workers
+|-- docs/
+|   |-- architecture-baseline.md      # implemented controlling baseline
+|   |-- gui-handoff-next-steps.md     # recommended GUI integration sequence
+|   |-- planning_baseline_v01/        # preserved historical planning baseline
+|   `-- planning_baseline_v02/        # current aligned draft planning guidance
+`-- tools/
+    `-- check_monoliths.py            # implemented source hygiene checker
+```
+
+Workers remain outside `black_box_optimizer`. The installed
+`hyperloop_workers.synthetic_worker` uses only the Python standard library.
+PyTorch belongs only to the source-checkout Iris example and its tests; it is
+not a dependency of the Hyperloop distribution.
+
+### Component responsibilities
+
+| Component | Owns | Must not own |
+| --- | --- | --- |
+| Configuration loader | JSON parsing and complete pre-run validation | Worker execution or candidate search |
+| Search algorithm | Legal untried candidate proposals | Subprocesses, stopping, or Pareto ranking |
+| Controller | Sequential lifecycle and launch authorization | Worker internals or metric weighting |
+| Stop policy | Maximum-trial decision | Candidate selection or process control |
+| Runner | CLI construction, timeout, and process observations | Search or objective interpretation |
+| Record factory | Metrics parsing and immutable trial evidence | History mutation beyond one append request |
+| Trial history | Ordered append-only records and tuple snapshots | Ranking, deletion, or rewriting evidence |
+| Persistence | Run/trial directories, diagnostics, and atomic history checkpoints | Ranking, evaluating, or interpreting metrics |
+| Pareto evaluator | Eligibility, mixed-direction dominance, and complete front | Weighted scoring or worker execution |
+| Reporter | Authoritative exports and explanatory visualization | Optimizer state or universal-winner selection |
+| GUI | Optional presentation of authoritative results | Required optimizer logic or result mutation |
+
+The intended dependency direction is inward toward immutable contracts. The
+Runner will not import search or Pareto code; RandomSearch will not import the
+Runner; and the optimizer package will never import a worker implementation.
+
+### Public API
+
+`load_configuration(path)` reads one UTF-8 JSON project file, validates its
+complete structure before any trial can run, resolves relative worker script
+or executable paths from the configuration file's directory, and returns an
+immutable `ProjectConfiguration`. Invalid input raises `ConfigurationError`
+with one or more location-aware issues.
+
+The `black_box_optimizer` package root currently exports:
+
+- `ParameterKind`
+- `ParameterDefinition`
+- `Direction`
+- `Objective`
+- `OptimizationContract`
+- `WorkerSpec`
+- `AlgorithmSpec`
+- `StopPolicy`
+- `ProjectConfiguration`
+- `CandidateConfiguration`
+- `ParetoFront`
+- `OptimizationResult`
+- `ConfigurationError`
+- `load_configuration`
+
+These are frozen dataclasses or string enums. Ordered collections use tuples,
+and candidate mappings are defensively copied into read-only views.
+
+Additional implemented surfaces are imported from their owning modules:
+
+- `black_box_optimizer.metrics.read_trial_metrics`
+- `black_box_optimizer.records.TrialRecord` and `build_trial_record`
+- `black_box_optimizer.history.TrialHistory`
+- `black_box_optimizer.stop_policy.StopDecision` and `StopPolicyEvaluator`
+- `black_box_optimizer.runner.execute`
+- `black_box_optimizer.controller.ApplicationController`
+- `black_box_optimizer.pareto.is_eligible`
+- `black_box_optimizer.persistence.RunDirectory` and `create_run_directory`
+- `black_box_optimizer.reporting.Reporter`
+- `black_box_optimizer.application.initialize_application`
+- `black_box_optimizer.search.base.ProposalResult` and `SearchAlgorithm`
+- `black_box_optimizer.search.registry.create_algorithm`
+- `black_box_optimizer.search.random_search.RandomSearch`
+- `black_box_optimizer.search.nsga2.NSGA2`
+
+### Development workflow
 
 The team is moving toward trunk-based development. `main` is the shared
 integration branch, and implementation work occurs on short-lived,
@@ -571,7 +575,7 @@ timestamped working branches.
   merge and checkpoint tag preserve its history; merged branches do not remain
   active.
 
-## Development Verification
+### Running the test suite
 
 Install Hyperloop and the separate Iris test dependency into the same Python
 3.13 interpreter used to run the complete repository suite:
@@ -593,9 +597,13 @@ Run the repository-wide source hygiene check:
 py -3.13 tools\check_monoliths.py
 ```
 
-At the package-remediation checkpoint, 394 tests pass under the
-course-required Python 3.13.14 interpreter. The suite includes real
+The suite (419 tests at last count, 99% branch coverage) runs under the
+course-required Python 3.13.14 interpreter. It includes real
 controller-to-Iris runs, a synthetic-worker subprocess test, an end-to-end
 module CLI test, repeated-run isolation coverage, and packaging-boundary
 checks. The source-hygiene check passes across 62 source files; line-length
 advisories remain non-failing design guidance.
+
+---
+*Built by The Snek People for CSCI 3038 at Middle Tennessee State University.
+Licensed under MIT.*
